@@ -1,0 +1,88 @@
+"""Node: execute tool calls requested by the LLM."""
+
+from __future__ import annotations
+
+import json
+import time
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agent.execution_trace import tool_step
+from app.agent.progress import emit
+from app.agent.state import AgentState
+from app.agent.tools import execute_tool
+from app.core.logging import get_logger
+from app.llm.client import Message
+
+logger = get_logger(__name__)
+
+
+async def tool_executor_node(state: AgentState, *, session: AsyncSession) -> AgentState:
+    tool_calls: list[dict] = state.get("tool_calls") or []
+    messages: list[Message] = list(state.get("messages") or [])
+    user_id = state.get("user_id")
+    trace = list(state.get("execution_trace") or [])
+
+    for tc in tool_calls:
+        fn = tc.get("function", {}) or {}
+        name = fn.get("name", "unknown")
+        call_id = tc.get("id", "")
+        raw_args = fn.get("arguments", "{}")
+
+        emit(
+            {
+                "type": "step_start",
+                "node": "tool_executor",
+                "kind": "tool",
+                "title": name,
+                "tool": name,
+                "status": "running",
+            }
+        )
+        logger.info("tool_invoke", tool=name, call_id=call_id)
+        started = time.perf_counter()
+        result = await execute_tool(
+            name, raw_args, session=session, user_id=user_id
+        )
+        if not isinstance(result, dict):
+            result = {"ok": True, "result": result}
+        from app.agent.artifacts import attach_inspect
+
+        result = attach_inspect(result)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        step = tool_step(
+            name=name,
+            call_id=call_id,
+            raw_args=raw_args,
+            result=result,
+        )
+        step["elapsed_ms"] = elapsed_ms
+        if isinstance(result.get("inspect"), dict):
+            step["inspect"] = result["inspect"]
+        trace.append(step)
+        emit(
+            {
+                "type": "step_end",
+                "node": "tool_executor",
+                "kind": "tool",
+                "title": name,
+                "tool": name,
+                "elapsed_ms": elapsed_ms,
+                "status": step.get("status") or "ok",
+                "execution_trace": trace,
+            }
+        )
+        result_msg: Message = {
+            "role": "tool",
+            "tool_call_id": call_id,
+            "content": json.dumps(result, ensure_ascii=False, default=str),
+        }
+        messages.append(result_msg)
+
+    return {
+        **state,
+        "messages": messages,
+        "tool_calls": [],
+        "tool_loop_count": (state.get("tool_loop_count") or 0) + 1,
+        "execution_trace": trace,
+    }

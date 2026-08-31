@@ -1,0 +1,10 @@
+[
+  {
+    "question": "画一张赛博朋克雨夜街道，霓虹反射在积水上",
+    "solution": "补全镜头与色调后调用 generate_image，把 download_url 回给用户。"
+  },
+  {
+    "question": "生成一张极简海报风的咖啡店 logo 概念图",
+    "solution": "确认方形画幅与留白，再调用 generate_image。"
+  }
+]

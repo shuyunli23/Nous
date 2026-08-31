@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="ap-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7eb4d9"/>
+      <stop offset="38%" stop-color="#c5def0"/>
+      <stop offset="100%" stop-color="#eef5fa"/>
+    </linearGradient>
+    <radialGradient id="ap-sun" cx="78%" cy="18%" r="22%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="42%" stop-color="#e0f2fe" stop-opacity=".7"/>
+      <stop offset="100%" stop-color="#e0f2fe" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ap-far" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d7e6f2"/>
+      <stop offset="100%" stop-color="#b7cde0"/>
+    </linearGradient>
+    <linearGradient id="ap-mid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b8cfe3"/>
+      <stop offset="100%" stop-color="#8eacc4"/>
+    </linearGradient>
+    <linearGradient id="ap-near" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#9bb6cc"/>
+      <stop offset="55%" stop-color="#7d98b0"/>
+      <stop offset="100%" stop-color="#6b849a"/>
+    </linearGradient>
+    <filter id="ap-cloud" x="-25%" y="-40%" width="150%" height="180%">
+      <feGaussianBlur stdDeviation="36"/>
+    </filter>
+    <filter id="ap-ridge" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#ap-sky)"/>
+  <circle cx="1480" cy="190" r="240" fill="url(#ap-sun)"/>
+  <g filter="url(#ap-ridge)" fill="url(#ap-far)">
+    <path d="M-40 560 C 180 500 300 540 480 470 C 680 390 820 500 1040 430 C 1260 360 1420 470 1640 400 C 1780 350 1880 430 1960 410 L 1960 1080 L -40 1080 Z"/>
+  </g>
+  <g filter="url(#ap-ridge)" fill="url(#ap-mid)">
+    <path d="M-40 640 C 160 580 340 640 560 560 C 800 470 980 610 1220 530 C 1440 460 1600 590 1840 520 C 1920 490 1960 540 1960 560 L 1960 1080 L -40 1080 Z"/>
+  </g>
+  <g filter="url(#ap-cloud)">
+    <ellipse cx="200" cy="700" rx="420" ry="90" fill="#ffffff" opacity=".72"/>
+    <ellipse cx="620" cy="730" rx="380" ry="80" fill="#ffffff" opacity=".65"/>
+    <ellipse cx="1020" cy="710" rx="460" ry="100" fill="#ffffff" opacity=".78"/>
+    <ellipse cx="1460" cy="740" rx="400" ry="86" fill="#ffffff" opacity=".7"/>
+    <ellipse cx="1800" cy="700" rx="320" ry="76" fill="#ffffff" opacity=".6"/>
+    <ellipse cx="960" cy="800" rx="980" ry="120" fill="#f8fafc" opacity=".7"/>
+  </g>
+  <g fill="url(#ap-near)">
+    <path d="M-40 860 C 220 790 420 860 680 800 C 920 740 1100 860 1380 790 C 1620 730 1780 820 1960 780 L 1960 1080 L -40 1080 Z"/>
+  </g>
+  <path d="M720 860 C 820 780 900 760 980 690 C 1060 760 1140 790 1240 860 Z" fill="#e8eef4" opacity=".35"/>
+</svg>

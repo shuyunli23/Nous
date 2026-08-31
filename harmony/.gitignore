@@ -1,0 +1,90 @@
+# =========================
+# Project folders
+# =========================
+
+# Music folder in current directory
+/Music/
+
+# Frontend dependencies
+/frontend/node_modules/
+
+# Python virtual environment
+.venv/
+**/.venv/
+venv/
+**/venv/
+
+# =========================
+# Python cache
+# =========================
+
+__pycache__/
+**/__pycache__/
+
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter
+.ipynb_checkpoints/
+
+# pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# =========================
+# Build / distribution
+# =========================
+
+build/
+dist/
+*.egg-info/
+
+# =========================
+# Logs
+# =========================
+
+*.log
+
+# =========================
+# IDE / Editor
+# =========================
+
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# =========================
+# Environment variables
+# =========================
+
+.env
+.env.*
+
+# =========================
+# Temporary files
+# =========================
+
+tmp/
+temp/
+*.tmp
+
+# =========================
+# Database files
+# =========================
+
+harmony.db

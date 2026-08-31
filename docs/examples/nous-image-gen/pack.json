@@ -1,0 +1,18 @@
+{
+  "format": "nous-pack/2",
+  "id": "nous.image-gen",
+  "name": "文生图",
+  "version": "0.1.0",
+  "description": "文生图 playbook + generate_image 本地工具（示例包，供 L2 格式对照）。",
+  "author": "nous",
+  "license": "MIT",
+  "min_nous": "0.2.0",
+  "tags": ["image", "creative"],
+  "permissions": [
+    "script.python",
+    "network",
+    "fs.write.exports",
+    "env.OPENAI_API_KEY"
+  ],
+  "skills": ["skills/image-gen"]
+}

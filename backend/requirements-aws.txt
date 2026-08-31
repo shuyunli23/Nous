@@ -1,0 +1,8 @@
+# Optional: AWS Bedrock provider support.
+#
+# Only needed if you configure a provider of kind "bedrock" in the UI. Bedrock
+# uses SigV4 signed requests rather than a bearer token, and boto3 handles the
+# full credential chain (explicit keys, named profiles, SSO, instance roles).
+#
+#   pip install -r requirements-aws.txt
+boto3==1.35.92

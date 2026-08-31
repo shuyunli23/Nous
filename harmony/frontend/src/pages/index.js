@@ -1,0 +1,9 @@
+export { default as LoginPage } from './LoginPage';
+export { default as HomePage } from './HomePage';
+export { default as TopPage } from './TopPage';
+export { default as SearchPage } from './SearchPage';
+export { default as LibraryPage } from './LibraryPage';
+export { default as RequestsPage } from './RequestsPage';
+export { default as ManageMusicPage } from './ManageMusicPage';
+export { default as UsersPage } from './UsersPage';
+export { default as HistoryPage } from './HistoryPage';

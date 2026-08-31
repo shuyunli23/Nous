@@ -1,0 +1,43 @@
+# Python
+.venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+*.tsbuildinfo
+
+# Local data (SQLite, Chroma, uploads, exports, provider store)
+backend/data/
+*.db
+
+# Node
+node_modules/
+frontend/dist/
+harmony/frontend/dist/
+
+# Harmony library (user music, not source) and lyric cache
+harmony/Music/
+harmony/tmp_lyrics/
+harmony/tmp_imgs/
+harmony/harmony.db
+
+# Cursor / editor local state
+.cursor/
+
+# Secrets and local config
+.env
+.env.local
+*.env
+!.env.example
+
+# Logs / temp
+*.log
+tmp/
+temp/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

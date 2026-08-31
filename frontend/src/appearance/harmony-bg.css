@@ -1,0 +1,411 @@
+/* Harmony PlayerBackgrounds class names, scoped so they work without Tailwind. */
+
+.ambient .absolute {
+  position: absolute;
+}
+
+.ambient .relative {
+  position: relative;
+}
+
+.ambient .inset-0 {
+  inset: 0;
+}
+
+.ambient .inset-\[-50\%\] {
+  inset: -50%;
+}
+
+.ambient .overflow-hidden {
+  overflow: hidden;
+}
+
+.ambient .pointer-events-none {
+  pointer-events: none;
+}
+
+.ambient .z-0 {
+  z-index: 0;
+}
+
+.ambient .w-full {
+  width: 100%;
+}
+
+.ambient .h-full {
+  height: 100%;
+}
+
+.ambient .w-1 {
+  width: 4px;
+}
+
+.ambient .h-1 {
+  height: 4px;
+}
+
+.ambient .w-\[1px\] {
+  width: 1px;
+}
+
+.ambient .w-\[2px\] {
+  width: 2px;
+}
+
+.ambient .h-\[2px\] {
+  height: 2px;
+}
+
+.ambient .w-\[300px\] {
+  width: min(42%, 300px);
+}
+
+.ambient .h-\[300px\] {
+  height: min(42%, 300px);
+}
+
+.ambient .w-\[250px\] {
+  width: min(36%, 250px);
+}
+
+.ambient .h-\[250px\] {
+  height: min(36%, 250px);
+}
+
+.ambient .w-\[200px\] {
+  width: min(28%, 200px);
+}
+
+.ambient .h-\[200px\] {
+  height: min(28%, 200px);
+}
+
+.ambient .w-\[150px\] {
+  width: min(22%, 150px);
+}
+
+.ambient .h-\[150px\] {
+  height: min(22%, 150px);
+}
+
+.ambient .w-\[80px\] {
+  width: 80px;
+}
+
+.ambient .h-\[80px\] {
+  height: 80px;
+}
+
+.ambient .w-\[400px\] {
+  width: min(55%, 400px);
+}
+
+.ambient .h-\[400px\] {
+  height: min(55%, 400px);
+}
+
+.ambient .w-\[150\%\] {
+  width: 150%;
+}
+
+.ambient .w-\[120\%\] {
+  width: 120%;
+}
+
+.ambient .w-\[100\%\] {
+  width: 100%;
+}
+
+.ambient .w-\[200\%\] {
+  width: 200%;
+}
+
+.ambient .w-\[80\%\] {
+  width: 80%;
+}
+
+.ambient .w-\[60\%\] {
+  width: 60%;
+}
+
+.ambient .w-\[40\%\] {
+  width: 40%;
+}
+
+.ambient .h-\[50\%\] {
+  height: 50%;
+}
+
+.ambient .h-\[40\%\] {
+  height: 40%;
+}
+
+.ambient .h-\[35\%\] {
+  height: 35%;
+}
+
+.ambient .h-\[30\%\] {
+  height: 30%;
+}
+
+.ambient .h-\[25\%\] {
+  height: 25%;
+}
+
+.ambient .top-0 {
+  top: 0;
+}
+
+.ambient .top-1\/2 {
+  top: 50%;
+}
+
+.ambient .left-1\/2 {
+  left: 50%;
+}
+
+.ambient .-translate-x-1\/2.-translate-y-1\/2,
+.ambient .top-1\/2.left-1\/2 {
+  transform: translate(-50%, -50%);
+}
+
+.ambient .top-\[5\%\] {
+  top: 5%;
+}
+
+.ambient .top-\[10\%\] {
+  top: 10%;
+}
+
+.ambient .top-\[15\%\] {
+  top: 15%;
+}
+
+.ambient .top-\[20\%\] {
+  top: 20%;
+}
+
+.ambient .top-\[25\%\] {
+  top: 25%;
+}
+
+.ambient .top-\[30\%\] {
+  top: 30%;
+}
+
+.ambient .left-\[5\%\] {
+  left: 5%;
+}
+
+.ambient .left-\[10\%\] {
+  left: 10%;
+}
+
+.ambient .left-\[15\%\] {
+  left: 15%;
+}
+
+.ambient .left-\[20\%\] {
+  left: 20%;
+}
+
+.ambient .left-\[30\%\] {
+  left: 30%;
+}
+
+.ambient .left-\[-50\%\] {
+  left: -50%;
+}
+
+.ambient .-left-\[25\%\] {
+  left: -25%;
+}
+
+.ambient .-left-\[10\%\] {
+  left: -10%;
+}
+
+.ambient .right-\[15\%\] {
+  right: 15%;
+}
+
+.ambient .right-\[20\%\] {
+  right: 20%;
+}
+
+.ambient .bottom-\[30\%\] {
+  bottom: 30%;
+}
+
+.ambient .rounded-full {
+  border-radius: 9999px;
+}
+
+.ambient .bg-white {
+  background-color: #fff;
+}
+
+.ambient .bg-black {
+  background-color: #000;
+}
+
+.ambient .bg-cyan-300 {
+  background-color: #67e8f9;
+}
+
+.ambient .bg-white\/20 {
+  background-color: rgb(255 255 255 / 0.2);
+}
+
+.ambient .bg-black\/40 {
+  background-color: rgb(0 0 0 / 0.4);
+}
+
+.ambient .opacity-20 {
+  opacity: 0.2;
+}
+
+.ambient .opacity-30 {
+  opacity: 0.3;
+}
+
+.ambient .blur-\[40px\] {
+  filter: blur(40px);
+}
+
+.ambient .blur-\[50px\] {
+  filter: blur(50px);
+}
+
+.ambient .blur-\[60px\] {
+  filter: blur(60px);
+}
+
+.ambient .blur-\[80px\] {
+  filter: blur(80px);
+}
+
+.ambient .blur-\[100px\] {
+  filter: blur(100px);
+}
+
+.ambient .bg-gradient-to-b {
+  background-image: linear-gradient(to bottom, var(--hw-from), var(--hw-via, var(--hw-from)), var(--hw-to));
+}
+
+.ambient .bg-gradient-to-br {
+  background-image: linear-gradient(to bottom right, var(--hw-from), var(--hw-via, var(--hw-from)), var(--hw-to));
+}
+
+.ambient .from-emerald-900\/30 {
+  --hw-from: rgb(6 78 59 / 0.3);
+}
+
+.ambient .from-indigo-950\/40 {
+  --hw-from: rgb(30 27 75 / 0.4);
+}
+
+.ambient .from-black {
+  --hw-from: #000;
+}
+
+.ambient .from-purple-950\/30 {
+  --hw-from: rgb(59 7 100 / 0.3);
+}
+
+.ambient .from-blue-950\/30 {
+  --hw-from: rgb(23 37 84 / 0.3);
+}
+
+.ambient .from-slate-900 {
+  --hw-from: #0f172a;
+}
+
+.ambient .from-slate-900.via-purple-950\/50 {
+  --hw-from: #0f172a;
+  --hw-via: rgb(59 7 100 / 0.5);
+}
+
+.ambient .from-orange-950\/40 {
+  --hw-from: rgb(67 20 7 / 0.4);
+}
+
+.ambient .via-black {
+  --hw-via: #000;
+}
+
+.ambient .via-slate-950 {
+  --hw-via: #020617;
+}
+
+.ambient .via-indigo-950\/60 {
+  --hw-via: rgb(30 27 75 / 0.6);
+}
+
+.ambient .via-red-950\/30 {
+  --hw-via: rgb(69 10 10 / 0.3);
+}
+
+.ambient .to-black {
+  --hw-to: #000;
+}
+
+.ambient .to-slate-900 {
+  --hw-to: #0f172a;
+}
+
+.ambient .from-blue-200\/60 {
+  --hw-from: rgb(191 219 254 / 0.6);
+}
+
+.ambient .to-transparent {
+  --hw-to: transparent;
+}
+
+.ambient .bg-gradient-to-b.from-blue-200\/60 {
+  background-image: linear-gradient(to bottom, rgb(191 219 254 / 0.6), transparent);
+}
+
+@media (min-width: 640px) {
+  .ambient .sm\:w-\[400px\] {
+    width: min(46%, 400px);
+  }
+
+  .ambient .sm\:h-\[400px\] {
+    height: min(46%, 400px);
+  }
+
+  .ambient .sm\:w-\[350px\] {
+    width: min(40%, 350px);
+  }
+
+  .ambient .sm\:h-\[350px\] {
+    height: min(40%, 350px);
+  }
+}
+
+@media (min-width: 768px) {
+  .ambient .md\:w-\[500px\] {
+    width: min(52%, 500px);
+  }
+
+  .ambient .md\:h-\[500px\] {
+    height: min(52%, 500px);
+  }
+
+  .ambient .md\:w-\[450px\] {
+    width: min(48%, 450px);
+  }
+
+  .ambient .md\:h-\[450px\] {
+    height: min(48%, 450px);
+  }
+
+  .ambient .md\:blur-\[100px\] {
+    filter: blur(100px);
+  }
+
+  .ambient .md\:blur-\[80px\] {
+    filter: blur(80px);
+  }
+}

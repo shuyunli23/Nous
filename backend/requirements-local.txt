@@ -1,0 +1,4 @@
+# Optional: in-process embeddings (EMBEDDING_PROVIDER=local).
+# Large download (~1GB with torch). Only install if you want offline embeddings.
+-r requirements.txt
+sentence-transformers==3.3.1

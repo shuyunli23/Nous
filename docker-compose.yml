@@ -1,0 +1,112 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nous-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skill}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skill}
+      POSTGRES_DB: ${POSTGRES_DB:-skillagent}
+      # Deterministic collation so index ordering does not depend on the host.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    # Not published by default: the database is only reachable on the compose
+    # network. Uncomment to inspect it with a local client.
+    # ports:
+    #   - "5432:5432"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skill} -d ${POSTGRES_DB:-skillagent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    networks: [nous-net]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nous-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Every tunable from .env reaches the container, so the documented settings
+    # (retrieval thresholds, extraction limits, ...) behave the same as locally.
+    # The explicit block below overrides whatever .env says for the few values
+    # that must be container-specific.
+    env_file:
+      - .env
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_JSON: ${LOG_JSON:-true}
+      DATABASE_URL: >-
+        postgresql+asyncpg://${POSTGRES_USER:-skill}:${POSTGRES_PASSWORD:-skill}@postgres:5432/${POSTGRES_DB:-skillagent}
+      # Alembic owns the schema in Docker; no create_all at startup.
+      DB_AUTO_CREATE: "false"
+
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-remote}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
+      EMBEDDING_FALLBACK_TO_HASH: ${EMBEDDING_FALLBACK_TO_HASH:-true}
+
+      VECTOR_BACKEND: ${VECTOR_BACKEND:-chroma}
+      CHROMA_PERSIST_DIR: /app/data/chroma
+
+      # Providers saved from the settings UI live on their own volume, otherwise
+      # they would sit in the container layer and vanish on the next rebuild.
+      RUNTIME_LLM_CONFIG_ENABLED: ${RUNTIME_LLM_CONFIG_ENABLED:-true}
+      LLM_PROVIDER_STORE: /app/data/config/llm_providers.json
+
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      EXTRACTION_ENABLED: ${EXTRACTION_ENABLED:-true}
+      EXTRACTION_AUTO_ACTIVATE: ${EXTRACTION_AUTO_ACTIVATE:-false}
+    volumes:
+      # Vector index must survive restarts; Postgres stays the source of truth
+      # and the index can always be rebuilt via /api/v1/skills/reindex.
+      - chroma-data:/app/data/chroma
+      - config-data:/app/data/config
+      # Chat uploads and generated HTML / SVG / PPT / images.
+      - exports-data:/app/data/exports
+      - uploads-data:/app/data/uploads
+      - skill-packs-data:/app/data/skill_packs
+    # Not published by default: reached through the frontend's /api/ proxy.
+    # Uncomment to call the API directly while debugging.
+    # ports:
+    #   - "8000:8000"
+    networks: [nous-net]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nous-web
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    networks: [nous-net]
+
+volumes:
+  postgres-data:
+  chroma-data:
+  config-data:
+  exports-data:
+  uploads-data:
+  skill-packs-data:
+
+networks:
+  nous-net:
+    driver: bridge

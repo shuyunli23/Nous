@@ -1,0 +1,429 @@
+.ws-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #e8edf4;
+}
+
+.ws-bg__media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ws-bg__grain,
+.ws-bg__veil,
+.ws-atm,
+.ws-live {
+  position: absolute;
+  inset: 0;
+}
+
+.ws-bg__grain {
+  opacity: 0.22;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.08  0 0 0 0 0.1  0 0 0 0 0.12  0 0 0 0.55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size: 160px 160px;
+  mix-blend-mode: multiply;
+}
+
+.ws-bg__veil {
+  background: rgba(255, 255, 255, var(--ws-veil, 0.72));
+}
+
+.ws-bg--plain .ws-bg__grain,
+.ws-bg--plain .ws-bg__veil {
+  display: none;
+}
+
+.ws-atm--plain {
+  background:
+    radial-gradient(ellipse 90% 55% at 8% -8%, rgba(13, 148, 136, 0.08), transparent 52%),
+    radial-gradient(ellipse 70% 45% at 100% 0%, rgba(59, 130, 246, 0.05), transparent 48%),
+    #f3f5f8;
+}
+
+.ws-atm--mesh {
+  background:
+    radial-gradient(ellipse 82% 58% at 8% 0%, rgba(56, 189, 248, 0.72), transparent 52%),
+    radial-gradient(ellipse 70% 50% at 96% 4%, rgba(167, 139, 250, 0.62), transparent 50%),
+    radial-gradient(ellipse 58% 48% at 78% 100%, rgba(251, 146, 60, 0.5), transparent 52%),
+    radial-gradient(ellipse 46% 42% at 4% 92%, rgba(45, 212, 191, 0.42), transparent 50%),
+    linear-gradient(180deg, #e8eef6 0%, #dce4ee 100%);
+}
+
+.ws-atm--grain {
+  background:
+    radial-gradient(ellipse 70% 50% at 50% -10%, rgba(255, 255, 255, 0.9), transparent 55%),
+    linear-gradient(165deg, #f4f1ea 0%, #e7e2d6 48%, #ddd6c8 100%);
+}
+
+.ws-atm--dawn {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 108%, rgba(253, 186, 116, 0.55), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 18% 20%, rgba(251, 207, 232, 0.45), transparent 50%),
+    linear-gradient(180deg, #9ec5e8 0%, #f3d5c0 52%, #f7e6c8 100%);
+}
+
+.ws-atm--dusk {
+  background:
+    radial-gradient(ellipse 70% 50% at 80% 10%, rgba(167, 139, 250, 0.45), transparent 50%),
+    radial-gradient(ellipse 80% 45% at 30% 100%, rgba(251, 146, 60, 0.4), transparent 48%),
+    linear-gradient(180deg, #1e293b 0%, #4c1d3d 46%, #c2410c 100%);
+}
+
+.ws-atm--aurora {
+  background:
+    radial-gradient(ellipse 70% 36% at 46% 38%, rgba(94, 234, 212, 0.42), transparent 62%),
+    radial-gradient(ellipse 48% 28% at 68% 28%, rgba(192, 132, 252, 0.32), transparent 58%),
+    linear-gradient(180deg, #020617 0%, #0b1b33 46%, #07141f 100%);
+}
+
+.ws-atm--ocean {
+  background:
+    radial-gradient(ellipse 80% 40% at 50% 100%, rgba(255, 255, 255, 0.35), transparent 50%),
+    linear-gradient(180deg, #9ec5e0 0%, #c5dce8 38%, #7aa3b8 100%);
+}
+
+.ws-atm--forest {
+  background:
+    radial-gradient(ellipse 46% 36% at 42% 6%, rgba(255, 247, 237, 0.55), transparent 58%),
+    linear-gradient(180deg, #f0dfb4 0%, #6b7f4e 42%, #101f16 100%);
+}
+
+.ws-atm--alpine {
+  background:
+    radial-gradient(ellipse 28% 22% at 78% 16%, rgba(255, 255, 255, 0.8), transparent 60%),
+    linear-gradient(180deg, #7eb4d9 0%, #d4e6f2 46%, #eef5fa 100%);
+}
+
+.ws-atm--sunset {
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 100%, rgba(251, 146, 60, 0.55), transparent 50%),
+    linear-gradient(180deg, #f59e8b 0%, #fb923c 42%, #7c3a5e 100%);
+}
+
+.ws-atm--live.ws-atm--mesh::before,
+.ws-atm--live.ws-atm--dawn::before,
+.ws-atm--live.ws-atm--dusk::before {
+  content: '';
+  position: absolute;
+  width: 58%;
+  height: 58%;
+  left: -8%;
+  top: -12%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.45), transparent 68%);
+  animation: ws-drift 26s ease-in-out infinite;
+}
+
+.ws-atm--live.ws-atm--dusk::before {
+  background: radial-gradient(circle, rgba(251, 146, 60, 0.35), transparent 68%);
+}
+
+.ws-live span {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.ws-live--mesh .ws-live__a,
+.ws-live--dawn .ws-live__a,
+.ws-live--dusk .ws-live__a,
+.ws-live--grain .ws-live__a {
+  width: 42%;
+  height: 36%;
+  right: -6%;
+  top: 8%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.35), transparent 70%);
+  animation: ws-drift 22s ease-in-out infinite reverse;
+}
+
+.ws-live--aurora .ws-live__a,
+.ws-live--aurora .ws-live__b,
+.ws-live--aurora .ws-live__c {
+  width: 72%;
+  height: 22%;
+  left: 12%;
+  border-radius: 50%;
+  filter: blur(36px);
+  animation: ws-mist 22s ease-in-out infinite;
+}
+
+.ws-live--aurora .ws-live__a {
+  top: 22%;
+  background: rgba(94, 234, 212, 0.28);
+}
+
+.ws-live--aurora .ws-live__b {
+  top: 32%;
+  left: 22%;
+  background: rgba(192, 132, 252, 0.2);
+  animation-duration: 28s;
+  animation-direction: reverse;
+}
+
+.ws-live--aurora .ws-live__c {
+  top: 40%;
+  background: rgba(52, 211, 153, 0.18);
+  animation-delay: -9s;
+}
+
+.ws-live--ocean .ws-live__a,
+.ws-live--ocean .ws-live__b,
+.ws-live--ocean .ws-live__c {
+  width: 130%;
+  height: 30%;
+  left: -15%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.32), transparent);
+  filter: blur(18px);
+  animation: ws-mist 16s ease-in-out infinite;
+}
+
+.ws-live--ocean .ws-live__a { top: 42%; }
+.ws-live--ocean .ws-live__b { top: 58%; animation-duration: 22s; animation-delay: -6s; }
+.ws-live--ocean .ws-live__c { top: 74%; animation-delay: -11s; }
+
+.ws-live--forest .ws-live__a {
+  width: 56%;
+  height: 70%;
+  left: 18%;
+  top: -16%;
+  background: radial-gradient(circle, rgba(255, 247, 237, 0.32), transparent 70%);
+  animation: ws-breathe 16s ease-in-out infinite;
+}
+
+.ws-live--forest .ws-live__b,
+.ws-live--forest .ws-live__c {
+  width: 3px;
+  height: 3px;
+  background: rgba(255, 247, 237, 0.7);
+  box-shadow:
+    90px 140px 0 rgba(255, 247, 237, 0.4),
+    240px 70px 0 rgba(255, 255, 255, 0.28),
+    460px 200px 0 rgba(254, 243, 199, 0.35),
+    680px 110px 0 rgba(255, 255, 255, 0.25);
+  animation: ws-motes 26s linear infinite;
+}
+
+.ws-live--alpine .ws-live__a,
+.ws-live--alpine .ws-live__b {
+  width: 150%;
+  height: 28%;
+  left: -24%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  filter: blur(28px);
+  animation: ws-mist 26s ease-in-out infinite;
+}
+
+.ws-live--alpine .ws-live__a { top: 56%; }
+.ws-live--alpine .ws-live__b { top: 68%; animation-duration: 32s; animation-direction: reverse; }
+
+.ws-live--sunset .ws-live__a {
+  width: 70%;
+  height: 50%;
+  left: 15%;
+  bottom: -8%;
+  top: auto;
+  background: radial-gradient(circle, rgba(251, 146, 60, 0.4), transparent 70%);
+  animation: ws-breathe 14s ease-in-out infinite;
+}
+
+.ws-live--sunset .ws-live__b {
+  width: 40%;
+  height: 30%;
+  right: 8%;
+  top: 10%;
+  background: radial-gradient(circle, rgba(253, 186, 116, 0.28), transparent 70%);
+  animation: ws-drift 22s ease-in-out infinite;
+}
+
+.ws-live--dust .ws-live__a,
+.ws-live--dust .ws-live__b {
+  width: 3px;
+  height: 3px;
+  background: #fff;
+  box-shadow:
+    60px 40px 0 rgba(255, 255, 255, 0.5),
+    200px 120px 0 rgba(255, 255, 255, 0.35),
+    400px 80px 0 rgba(255, 255, 255, 0.45),
+    640px 200px 0 rgba(255, 255, 255, 0.3);
+  animation: ws-motes 18s linear infinite;
+}
+
+.ws-live--dust .ws-live__b {
+  animation-duration: 24s;
+  animation-direction: reverse;
+}
+
+@keyframes ws-drift {
+  0%,
+  100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(8%, 6%) scale(1.08); }
+}
+
+@keyframes ws-mist {
+  0%,
+  100% { transform: translateX(-6%); opacity: 0.35; }
+  50% { transform: translateX(8%); opacity: 0.7; }
+}
+
+@keyframes ws-motes {
+  from { transform: translateY(10vh); }
+  to { transform: translateY(-90vh); }
+}
+
+@keyframes ws-breathe {
+  0%,
+  100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.06); }
+}
+
+@keyframes ws-twinkle {
+  0%,
+  100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
+
+@keyframes ws-petal {
+  0% { transform: translate3d(0, -10%, 0) rotate(0deg); opacity: 0; }
+  8% { opacity: 0.85; }
+  100% { transform: translate3d(-40px, 110vh, 0) rotate(240deg); opacity: 0; }
+}
+
+@keyframes ws-flash {
+  0%,
+  86%,
+  100% { opacity: 0; }
+  88% { opacity: 0.55; }
+  90% { opacity: 0.12; }
+  92% { opacity: 0.4; }
+  95% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-atm--live::before,
+  .ws-live span {
+    animation: none !important;
+  }
+}
+
+.ws-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ws-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.55);
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ws-pick:hover {
+  border-color: var(--border-strong);
+}
+
+.ws-pick--on {
+  border-color: rgba(13, 148, 136, 0.55);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.14);
+}
+
+.ws-pick__swatch {
+  position: relative;
+  height: 72px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ws-pick__swatch .ws-atm,
+.ws-pick__swatch .ws-bg__media {
+  position: absolute;
+  inset: 0;
+}
+
+.ws-pick__swatch .ws-bg__media {
+  width: 100%;
+  height: 100%;
+}
+
+.ws-pick__name {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.ws-pick__hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: -4px;
+}
+
+.ws-pick--import {
+  border-style: dashed;
+  min-height: 118px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.ws-pick__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.ws-veil {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ws-veil input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.ws-customs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ws-custom {
+  position: relative;
+}
+
+.ws-custom__del {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #fff;
+  font-size: 14px;
+  line-height: 22px;
+  padding: 0;
+}
