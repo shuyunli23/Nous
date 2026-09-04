@@ -206,23 +206,21 @@ const Fireworks = ({ isPlaying }) => {
       if (!targetCtx || points.length < 2) return;
       targetCtx.lineCap = 'round';
       targetCtx.lineJoin = 'round';
-      for (let i = 1; i < points.length; i++) {
-        const t = i / (points.length - 1);
-        targetCtx.beginPath();
-        targetCtx.moveTo(points[i - 1].x, points[i - 1].y);
-        targetCtx.lineTo(points[i].x, points[i].y);
-        targetCtx.strokeStyle = `rgba(255, ${168 + t * 62}, ${92 + t * 90}, ${0.12 + t * 0.72})`;
-        targetCtx.lineWidth = 0.55 + t * 1.85;
-        targetCtx.stroke();
-      }
-      const headStart = Math.max(1, points.length - 2);
       targetCtx.beginPath();
-      targetCtx.moveTo(points[headStart].x, points[headStart].y);
-      for (let i = headStart + 1; i < points.length; i++) {
+      targetCtx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
         targetCtx.lineTo(points[i].x, points[i].y);
       }
-      targetCtx.strokeStyle = 'rgba(255, 252, 240, 0.95)';
-      targetCtx.lineWidth = 1.15;
+      targetCtx.strokeStyle = 'rgba(255, 214, 168, 0.28)';
+      targetCtx.lineWidth = 1.05;
+      targetCtx.stroke();
+      const n = points.length;
+      if (n < 3) return;
+      targetCtx.beginPath();
+      targetCtx.moveTo(points[n - 3].x, points[n - 3].y);
+      targetCtx.lineTo(points[n - 1].x, points[n - 1].y);
+      targetCtx.strokeStyle = 'rgba(255, 248, 232, 0.62)';
+      targetCtx.lineWidth = 1.2;
       targetCtx.stroke();
     };
 
@@ -245,16 +243,33 @@ const Fireworks = ({ isPlaying }) => {
 
     const fadeBack = (width, height) => {
       ctx.globalCompositeOperation = 'source-over';
-      if (width > 0 && height > 0) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
-        ctx.fillRect(0, 0, width, height);
-      }
+      if (width <= 0 || height <= 0) return;
+      const sky = ctx.createLinearGradient(0, 0, 0, height);
+      sky.addColorStop(0, 'rgba(6, 10, 28, 0.72)');
+      sky.addColorStop(0.42, 'rgba(10, 16, 38, 0.7)');
+      sky.addColorStop(0.76, 'rgba(18, 16, 32, 0.68)');
+      sky.addColorStop(1, 'rgba(28, 20, 16, 0.68)');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, width, height);
+
+      const haze = ctx.createRadialGradient(
+        width * 0.5,
+        height * 1.08,
+        height * 0.06,
+        width * 0.5,
+        height * 1.02,
+        height * 0.52,
+      );
+      haze.addColorStop(0, 'rgba(52, 38, 28, 0.16)');
+      haze.addColorStop(1, 'rgba(52, 38, 28, 0)');
+      ctx.fillStyle = haze;
+      ctx.fillRect(0, 0, width, height);
     };
 
     const fadeFront = (width, height) => {
       if (!frontCtx || width <= 0 || height <= 0) return;
       frontCtx.globalCompositeOperation = 'destination-out';
-      frontCtx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+      frontCtx.fillStyle = 'rgba(0, 0, 0, 0.62)';
       frontCtx.fillRect(0, 0, width, height);
       frontCtx.globalCompositeOperation = 'source-over';
     };
@@ -299,8 +314,11 @@ const Fireworks = ({ isPlaying }) => {
         rocket.x += rocket.vx * dt;
         rocket.y += rocket.vy * dt;
         rocket.vy += 0.04 * dt;
-        rocket.trail.push({ x: rocket.x, y: rocket.y });
-        if (rocket.trail.length > 10) rocket.trail.shift();
+        const last = rocket.trail[rocket.trail.length - 1];
+        if (!last || Math.hypot(rocket.x - last.x, rocket.y - last.y) > 3.2) {
+          rocket.trail.push({ x: rocket.x, y: rocket.y });
+          if (rocket.trail.length > 5) rocket.trail.shift();
+        }
 
         if (rocket.y <= rocket.targetY || rocket.vy >= rocket.burstVy) {
           explode(rocket, width, height);
@@ -347,7 +365,13 @@ const Fireworks = ({ isPlaying }) => {
   );
 
   return (
-    <div className="absolute inset-0 bg-black">
+    <div
+      className="absolute inset-0"
+      style={{
+        background:
+          'linear-gradient(180deg, #060a1c 0%, #0b1028 46%, #141022 76%, #1a140f 100%)',
+      }}
+    >
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full"
