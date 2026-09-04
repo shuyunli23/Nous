@@ -40,6 +40,7 @@ Nous 会在会话结束后判断这段对话是否包含可复用的经验，如
 | **内置工具** | 网页搜索、抓取页面、查天气、生成 PPT / 网页 Demo、计算器、当前时间 |
 | **会话预览** | 工具产出的 HTML 网页和 SVG 图在对话里直接预览，可切换源码 |
 | **Skill 包导入** | 一键导入内置能力包，或粘贴 JSON（Claude / WorkBuddy 风格 playbook） |
+| **插件** | 稳定 `nous-plugin/1`；zip / GitHub 导入；兼容 nous-pack/2 与 DeepSeek Harness（`dsh`）仓库 |
 | **Skill 自动沉淀** | 会话关闭时判断可复用性并提炼 Skill，带去重与合并；大段 SVG / HTML 会压缩后再抽取 |
 | **混合检索** | 向量 + 关键词融合打分，短查询也能命中 |
 | **反馈闭环** | 使用次数与成功率进入排序；失败达阈值可自动禁用 |
@@ -417,6 +418,7 @@ CORS_ORIGINS=http://localhost:3000
 4. **审核 Skill** —— 自动生成的 Skill 默认是**草稿**，需要在「Skill 管理」里确认并启用后才参与检索。
 5. **调阈值** —— 「Skill 管理」页顶部的检索测试框可以输入任意问题，查看命中情况和
    「向量得分 + 关键词得分」拆解，方便调 `SKILL_MIN_SIMILARITY`。
+6. **安装插件** —— 同一页可贴 GitHub 地址（`owner/repo`）或上传 zip。稳定格式是根目录 `plugin.json`（`nous-plugin/1`）。DeepSeek Harness 插件仓库（`package.json` 里有 `dsh` 字段）会导入为 Skill；**不会**执行 Cordis 的 TypeScript `apply()`。带 Python 脚本的包仍走沙箱，需勾选 `script.python`。示例：`docs/examples/hello-plugin`。
 
 ---
 
@@ -546,6 +548,20 @@ alembic revision --autogenerate -m "描述"   # 生成新迁移
 | `POST` | `/skills/reindex` | 从数据库重建向量索引 |
 | `POST` | `/skills/{id}/feedback` | 记录使用反馈 |
 
+### 插件
+
+稳定清单是 `plugin.json`（`nous-plugin/1`）。也接受 `pack.json`（nous-pack/2）和 DeepSeek Harness 的 `package.json`（`dsh` 字段）。GitHub 只允许 github.com / gitlab.com。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/plugins/preview` | 校验 zip（不安装） |
+| `POST` | `/plugins/preview-url` | 拉取 GitHub 仓库并校验 |
+| `POST` | `/plugins` | 安装 zip |
+| `POST` | `/plugins/from-url` | 从 GitHub URL 安装 |
+| `GET` | `/pack-archives` | 已安装插件列表 |
+| `PATCH` | `/pack-archives/{id}` | 启用 / 停用 |
+| `DELETE` | `/pack-archives/{id}` | 卸载 |
+
 ### 模型配置
 
 | 方法 | 路径 | 说明 |
@@ -641,7 +657,8 @@ nous/
 │       ├── repositories/        # 数据访问
 │       ├── schemas/             # Pydantic 请求/响应模型
 │       ├── services/            # 业务编排
-│       └── skill/               # 提取器、检索器
+│       ├── skill/               # 提取器、检索器、pack 格式
+│       └── plugin/              # 插件导入（nous-plugin/1、GitHub、dsh）
 ├── frontend/
 │   ├── Dockerfile
 │   ├── nginx.conf

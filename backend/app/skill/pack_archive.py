@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import tempfile
 import zipfile
@@ -85,15 +86,29 @@ def extract_pack_zip(data: bytes, *, dest: Path | None = None) -> tuple[Path, st
     return _find_pack_root(root), digest
 
 
+def _is_plugin_root(path: Path) -> bool:
+    if (path / "plugin.json").is_file() or (path / "pack.json").is_file():
+        return True
+    if (path / "SKILL.md").is_file():
+        return True
+    pkg = path / "package.json"
+    if pkg.is_file():
+        try:
+            data = json.loads(pkg.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = None
+        if isinstance(data, dict) and data.get("dsh") is not None:
+            return True
+    return False
+
+
 def _find_pack_root(extracted: Path) -> Path:
     """If the zip wrapped a single top-level folder, use that as pack root."""
-    if (extracted / "pack.json").is_file() or (extracted / "SKILL.md").is_file():
+    if _is_plugin_root(extracted):
         return extracted
     children = [p for p in extracted.iterdir() if p.name != "__MACOSX"]
-    if len(children) == 1 and children[0].is_dir():
-        inner = children[0]
-        if (inner / "pack.json").is_file() or (inner / "SKILL.md").is_file():
-            return inner
+    if len(children) == 1 and children[0].is_dir() and _is_plugin_root(children[0]):
+        return children[0]
     return extracted
 
 

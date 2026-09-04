@@ -17,6 +17,9 @@ from app.skill.pack_names import (
 )
 
 FORMAT_ID = "nous-pack/2"
+FORMAT_PLUGIN = "nous-plugin/1"
+FORMAT_DSH = "dsh-plugin"
+SUPPORTED_MANIFEST_FORMATS = frozenset({FORMAT_ID, FORMAT_PLUGIN})
 
 ALLOWED_PERMISSIONS = frozenset(
     {
@@ -339,68 +342,115 @@ def _parse_skill_dir(
     return parsed
 
 
+_SKIP_WALK = frozenset(
+    {"node_modules", ".git", "dist", "build", "__pycache__", "vendor", ".venv"}
+)
+
+
+def discover_skill_refs(pack_root: Path) -> list[str]:
+    """Find SKILL.md directories under a plugin root (max 20)."""
+    if (pack_root / "SKILL.md").is_file():
+        return ["."]
+    found: list[str] = []
+    for md in sorted(pack_root.rglob("SKILL.md")):
+        if any(part in _SKIP_WALK for part in md.parts):
+            continue
+        rel = md.parent.relative_to(pack_root).as_posix()
+        found.append("." if rel == "." else rel)
+        if len(found) >= 20:
+            break
+    return found
+
+
+def _parse_manifest_pack(
+    *,
+    manifest: dict[str, Any],
+    pack_root: Path,
+    warnings: list[str],
+    errors: list[str],
+) -> ParsedPack:
+    pack_id = validate_pack_id(str(manifest.get("id") or ""))
+    name = str(manifest.get("name") or pack_id)
+    version = str(manifest.get("version") or "").strip()
+    if not version:
+        raise ValueError("version is required (SemVer)")
+    skill_refs = manifest.get("skills") or []
+    if not isinstance(skill_refs, list) or not skill_refs:
+        skill_refs = discover_skill_refs(pack_root)
+        if skill_refs:
+            warnings.append("skills[] omitted; discovered SKILL.md directories")
+        else:
+            raise ValueError("manifest skills must be a non-empty list (or include SKILL.md)")
+    permissions = _normalize_permissions(manifest.get("permissions"), warnings)
+    shared = manifest.get("shared") or {}
+    shared_pythonpath = []
+    if isinstance(shared, dict):
+        shared_pythonpath = [
+            str(x).replace("\\", "/") for x in (shared.get("pythonpath") or [])
+        ]
+    skills: list[ParsedSkill] = []
+    for ref in skill_refs:
+        rel = str(ref).replace("\\", "/").strip().lstrip("./")
+        skill_dir = (pack_root / rel).resolve()
+        try:
+            skill_dir.relative_to(pack_root)
+        except ValueError as exc:
+            raise ValueError(f"Skill path escapes pack: {rel}") from exc
+        if not skill_dir.is_dir():
+            raise ValueError(f"Skill directory not found: {rel}")
+        skills.append(
+            _parse_skill_dir(
+                skill_dir=skill_dir,
+                pack_root=pack_root,
+                pack_id=pack_id,
+                warnings=warnings,
+            )
+        )
+    return ParsedPack(
+        pack_id=pack_id,
+        name=name[:200],
+        version=version[:32],
+        description=str(manifest.get("description") or ""),
+        author=(str(manifest["author"]) if manifest.get("author") else None),
+        license=(str(manifest["license"]) if manifest.get("license") else None),
+        min_nous=(str(manifest["min_nous"]) if manifest.get("min_nous") else None),
+        tags=[str(t) for t in (manifest.get("tags") or [])],
+        permissions_requested=permissions,
+        skills=skills,
+        shared_pythonpath=shared_pythonpath,
+        manifest=manifest,
+        warnings=warnings,
+        errors=errors,
+    )
+
+
 def parse_pack_directory(pack_root: Path) -> ParsedPack:
     """Parse an extracted pack directory into a structured model."""
     warnings: list[str] = []
     errors: list[str] = []
     pack_root = pack_root.resolve()
 
+    plugin_json_path = pack_root / "plugin.json"
     pack_json_path = pack_root / "pack.json"
     skill_md_root = pack_root / "SKILL.md"
 
-    if pack_json_path.is_file():
-        manifest = json.loads(pack_json_path.read_text(encoding="utf-8"))
+    if plugin_json_path.is_file() or pack_json_path.is_file():
+        manifest_path = plugin_json_path if plugin_json_path.is_file() else pack_json_path
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if not isinstance(manifest, dict):
-            raise ValueError("pack.json must be an object")
+            raise ValueError(f"{manifest_path.name} must be an object")
         fmt = str(manifest.get("format") or "")
-        if fmt != FORMAT_ID:
-            raise ValueError(f"Unsupported format {fmt!r}; expected {FORMAT_ID}")
-        pack_id = validate_pack_id(str(manifest.get("id") or ""))
-        name = str(manifest.get("name") or pack_id)
-        version = str(manifest.get("version") or "").strip()
-        if not version:
-            raise ValueError("pack.json version is required (SemVer)")
-        skill_refs = manifest.get("skills") or []
-        if not isinstance(skill_refs, list) or not skill_refs:
-            raise ValueError("pack.json skills must be a non-empty list")
-        permissions = _normalize_permissions(manifest.get("permissions"), warnings)
-        shared = manifest.get("shared") or {}
-        shared_pythonpath = []
-        if isinstance(shared, dict):
-            shared_pythonpath = [
-                str(x).replace("\\", "/") for x in (shared.get("pythonpath") or [])
-            ]
-        skills: list[ParsedSkill] = []
-        for ref in skill_refs:
-            rel = str(ref).replace("\\", "/").strip().lstrip("./")
-            skill_dir = (pack_root / rel).resolve()
-            try:
-                skill_dir.relative_to(pack_root)
-            except ValueError as exc:
-                raise ValueError(f"Skill path escapes pack: {rel}") from exc
-            if not skill_dir.is_dir():
-                raise ValueError(f"Skill directory not found: {rel}")
-            skills.append(
-                _parse_skill_dir(
-                    skill_dir=skill_dir,
-                    pack_root=pack_root,
-                    pack_id=pack_id,
-                    warnings=warnings,
-                )
+        if not fmt and manifest_path.name == "plugin.json":
+            fmt = FORMAT_PLUGIN
+            manifest = {**manifest, "format": fmt}
+        if fmt not in SUPPORTED_MANIFEST_FORMATS:
+            raise ValueError(
+                f"Unsupported format {fmt!r}; expected "
+                f"{FORMAT_PLUGIN} (plugin.json) or {FORMAT_ID} (pack.json)"
             )
-        parsed = ParsedPack(
-            pack_id=pack_id,
-            name=name[:200],
-            version=version[:32],
-            description=str(manifest.get("description") or ""),
-            author=(str(manifest["author"]) if manifest.get("author") else None),
-            license=(str(manifest["license"]) if manifest.get("license") else None),
-            min_nous=(str(manifest["min_nous"]) if manifest.get("min_nous") else None),
-            tags=[str(t) for t in (manifest.get("tags") or [])],
-            permissions_requested=permissions,
-            skills=skills,
-            shared_pythonpath=shared_pythonpath,
+        parsed = _parse_manifest_pack(
             manifest=manifest,
+            pack_root=pack_root,
             warnings=warnings,
             errors=errors,
         )
@@ -446,7 +496,10 @@ def parse_pack_directory(pack_root: Path) -> ParsedPack:
             errors=errors,
         )
     else:
-        raise ValueError("Archive must contain pack.json or a root SKILL.md")
+        raise ValueError(
+            "Archive must contain plugin.json, pack.json, a root SKILL.md, "
+            "or a DeepSeek Harness package.json (dsh field)"
+        )
 
     # Cross-pack tool name uniqueness
     seen_exposed: set[str] = set()
@@ -467,7 +520,7 @@ def parse_pack_directory(pack_root: Path) -> ParsedPack:
 
 def preview_dict(parsed: ParsedPack) -> dict[str, Any]:
     return {
-        "format": FORMAT_ID,
+        "format": str(parsed.manifest.get("format") or FORMAT_ID),
         "pack_id": parsed.pack_id,
         "version": parsed.version,
         "name": parsed.name,

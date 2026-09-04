@@ -15,6 +15,7 @@ from app.api.v1 import (
     llm_config,
     memory,
     pack_archives,
+    plugins,
     skills,
     tools,
     usage,
@@ -30,6 +31,7 @@ api_router.include_router(chat_modes.router)
 api_router.include_router(memory.router)
 api_router.include_router(conversations.router)
 api_router.include_router(pack_archives.router)
+api_router.include_router(plugins.router)
 api_router.include_router(skills.router)
 api_router.include_router(llm_config.router)
 api_router.include_router(usage.router)

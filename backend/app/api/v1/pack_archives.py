@@ -23,8 +23,8 @@ router = APIRouter(prefix="/pack-archives", tags=["skill-packs"])
 
 async def _read_upload(file: UploadFile) -> bytes:
     name = (file.filename or "").lower()
-    if name and not (name.endswith(".zip") or name.endswith(".nouspack")):
-        raise ValidationError("Upload a .zip or .nouspack file.")
+    if name and not (name.endswith(".zip") or name.endswith(".nouspack") or name.endswith(".nousplugin")):
+        raise ValidationError("Upload a .zip, .nouspack, or .nousplugin file.")
     data = await file.read()
     if not data:
         raise ValidationError("Empty upload.")

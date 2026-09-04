@@ -117,6 +117,8 @@ export interface PackArchivePreview {
   version: string;
   name: string;
   description: string;
+  origin?: string | null;
+  source_url?: string | null;
   permissions_requested: string[];
   tags: string[];
   skills: Array<{
@@ -137,6 +139,7 @@ export interface InstalledPackSummary {
   version: string;
   name: string;
   description: string;
+  format?: string;
   status: string;
   permissions: string[];
   permissions_requested: string[];
@@ -198,6 +201,26 @@ export function setInstalledPackStatus(
 
 export function uninstallPack(id: string): Promise<{ ok: boolean }> {
   return api.delete(`/pack-archives/${id}`);
+}
+
+export function previewPluginUrl(url: string): Promise<PackArchivePreview> {
+  return api.post<PackArchivePreview>('/plugins/preview-url', { url });
+}
+
+export function importPluginUrl(
+  url: string,
+  opts: {
+    grant_permissions?: string[];
+    activate?: boolean;
+    replace_existing?: boolean;
+  } = {},
+): Promise<PackArchiveImportResult> {
+  return api.post<PackArchiveImportResult>('/plugins/from-url', {
+    url,
+    grant_permissions: opts.grant_permissions ?? null,
+    activate: opts.activate ?? true,
+    replace_existing: opts.replace_existing ?? true,
+  });
 }
 
 export function sendSkillFeedback(

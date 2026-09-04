@@ -25,8 +25,10 @@ from app.schemas.skill_pack import (
     PackArchivePreview,
     PackToolSummary,
 )
+from app.plugin.github import fetch_plugin_archive
+from app.plugin.loader import parse_plugin_directory
 from app.skill.pack_archive import extract_pack_zip, install_tree
-from app.skill.pack_format import parse_pack_directory, preview_dict
+from app.skill.pack_format import preview_dict
 
 logger = get_logger(__name__)
 
@@ -36,13 +38,18 @@ class PackService:
         self.session = session
         self.skills = SkillRepository(session) if session is not None else None
 
-    async def preview_bytes(self, data: bytes) -> PackArchivePreview:
+    async def preview_bytes(
+        self, data: bytes, *, origin: str = "zip", source_url: str | None = None
+    ) -> PackArchivePreview:
         tmp_root: Path | None = None
         try:
             pack_root, _digest = extract_pack_zip(data)
             tmp_root = pack_root
-            parsed = parse_pack_directory(pack_root)
-            return PackArchivePreview.model_validate(preview_dict(parsed))
+            parsed = parse_plugin_directory(pack_root)
+            payload = preview_dict(parsed)
+            payload["origin"] = origin
+            payload["source_url"] = source_url
+            return PackArchivePreview.model_validate(payload)
         except ValidationError:
             raise
         except ValueError as exc:
@@ -58,6 +65,8 @@ class PackService:
         grant_permissions: list[str] | None = None,
         activate: bool = True,
         replace_existing: bool = True,
+        origin: str = "zip",
+        source_url: str | None = None,
     ) -> PackArchiveImportResult:
         if self.session is None or self.skills is None:
             raise RuntimeError("PackService.import_bytes requires a DB session")
@@ -66,7 +75,7 @@ class PackService:
         pack_root, digest = extract_pack_zip(data)
         try:
             try:
-                parsed = parse_pack_directory(pack_root)
+                parsed = parse_plugin_directory(pack_root)
             except ValueError as exc:
                 raise ValidationError(str(exc)) from exc
 
@@ -118,13 +127,20 @@ class PackService:
             if not activate:
                 status = SkillPackStatus.PENDING_REVIEW
 
+            manifest = dict(parsed.manifest)
+            nous_meta = dict(manifest.get("_nous") or {})
+            nous_meta["origin"] = origin
+            if source_url:
+                nous_meta["source_url"] = source_url
+            manifest["_nous"] = nous_meta
+
             pack = SkillPack(
                 user_id=user_id,
                 pack_id=parsed.pack_id,
                 version=parsed.version,
                 name=parsed.name,
                 description=parsed.description,
-                format="nous-pack/2",
+                format=str(manifest.get("format") or "nous-pack/2"),
                 permissions=granted,
                 permissions_requested=requested,
                 tags=parsed.tags,
@@ -134,7 +150,7 @@ class PackService:
                 install_path=str(rel_install).replace("\\", "/"),
                 content_hash=digest,
                 status=status.value,
-                manifest=parsed.manifest,
+                manifest=manifest,
             )
             self.session.add(pack)
             await self.session.flush()
@@ -203,6 +219,32 @@ class PackService:
             )
         finally:
             self._cleanup_extract(pack_root)
+
+    async def preview_url(self, url: str) -> PackArchivePreview:
+        data, source = await fetch_plugin_archive(url)
+        return await self.preview_bytes(
+            data, origin=source.kind, source_url=source.url
+        )
+
+    async def import_url(
+        self,
+        *,
+        user_id: str,
+        url: str,
+        grant_permissions: list[str] | None = None,
+        activate: bool = True,
+        replace_existing: bool = True,
+    ) -> PackArchiveImportResult:
+        data, source = await fetch_plugin_archive(url)
+        return await self.import_bytes(
+            user_id=user_id,
+            data=data,
+            grant_permissions=grant_permissions,
+            activate=activate,
+            replace_existing=replace_existing,
+            origin=source.kind,
+            source_url=source.url,
+        )
 
     async def list_installed(self, *, user_id: str) -> list[InstalledPackSummary]:
         result = await self.session.execute(

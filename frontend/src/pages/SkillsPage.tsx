@@ -7,11 +7,13 @@ import {
   deleteSkill,
   getSkill,
   importPackArchive,
+  importPluginUrl,
   importSkillPack,
   listInstalledPacks,
   listSkillPacks,
   listSkills,
   previewPackArchive,
+  previewPluginUrl,
   reindexSkills,
   searchSkills,
   setInstalledPackStatus,
@@ -74,6 +76,7 @@ export default function SkillsPage() {
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [zipGrants, setZipGrants] = useState<string[]>([]);
   const [zipBusy, setZipBusy] = useState(false);
+  const [pluginUrl, setPluginUrl] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,6 +157,61 @@ export default function SkillsPage() {
           tools: result.pack.tool_count,
         }),
       );
+      setZipFile(null);
+      setZipPreview(null);
+      setZipGrants([]);
+      setPluginUrl('');
+      await load();
+      await refreshInstalledPacks();
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : t('skills.installFailed'));
+    } finally {
+      setZipBusy(false);
+    }
+  }
+
+  async function handleUrlPreview() {
+    const url = pluginUrl.trim();
+    if (!url) return;
+    setZipFile(null);
+    setZipPreview(null);
+    setZipGrants([]);
+    setZipBusy(true);
+    setError(null);
+    try {
+      const preview = await previewPluginUrl(url);
+      setZipPreview(preview);
+      setZipGrants([...preview.permissions_requested]);
+      if (preview.errors.length) {
+        setError(t('skills.packInvalid', { errors: preview.errors.join('；') }));
+      }
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : t('skills.pluginPreviewFailed'));
+    } finally {
+      setZipBusy(false);
+    }
+  }
+
+  async function handleUrlInstall() {
+    const url = pluginUrl.trim();
+    if (!url || !zipPreview || zipPreview.errors.length) return;
+    setZipBusy(true);
+    setError(null);
+    try {
+      const result = await importPluginUrl(url, {
+        grant_permissions: zipGrants,
+        activate: true,
+        replace_existing: true,
+      });
+      setNotice(
+        t('skills.installed', {
+          name: result.pack.name,
+          version: result.pack.version,
+          skills: result.created_skills.length,
+          tools: result.pack.tool_count,
+        }),
+      );
+      setPluginUrl('');
       setZipFile(null);
       setZipPreview(null);
       setZipGrants([]);
@@ -404,17 +462,43 @@ export default function SkillsPage() {
           </div>
           )}
 
-          <details className="card" style={{ marginTop: 14 }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+          <div className="card" style={{ marginTop: 14 }}>
+            <h3 style={{ marginTop: 0, fontSize: 15 }}>
+              {t('skills.pluginTitle')}
+            </h3>
+            <p className="field__hint" style={{ marginTop: 0 }}>
+              {t('skills.pluginHint')}
+            </p>
+            <form
+              className="row"
+              style={{ marginTop: 10, flexWrap: 'wrap' }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleUrlPreview();
+              }}
+            >
+              <input
+                type="url"
+                value={pluginUrl}
+                onChange={(e) => setPluginUrl(e.target.value)}
+                placeholder={t('skills.pluginUrlPlaceholder')}
+                aria-label={t('skills.pluginUrlPlaceholder')}
+                style={{ flex: '1 1 240px' }}
+              />
+              <button
+                type="submit"
+                className="btn btn--sm"
+                disabled={zipBusy || !pluginUrl.trim()}
+              >
+                {t('skills.pluginPreview')}
+              </button>
+            </form>
+            <p className="field__hint" style={{ marginTop: 12, marginBottom: 6 }}>
               {t('skills.zipSummary')}
-            </summary>
-            <p className="field__hint" style={{ marginTop: 10 }}>
-              {t('skills.zipHint')}
             </p>
             <input
               type="file"
-              accept=".zip,.nouspack"
-              style={{ marginTop: 10 }}
+              accept=".zip,.nouspack,.nousplugin"
               onChange={(e) =>
                 void handleZipSelected(e.target.files?.[0] ?? null)
               }
@@ -430,7 +514,8 @@ export default function SkillsPage() {
                   <strong>{zipPreview.name}</strong>{' '}
                   <span className="mono faint">
                     {zipPreview.pack_id}@{zipPreview.version}
-                  </span>
+                  </span>{' '}
+                  <span className="badge badge--draft">{zipPreview.format}</span>
                 </p>
                 <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
                   {zipPreview.description}
@@ -480,14 +565,18 @@ export default function SkillsPage() {
                     type="button"
                     className="btn btn--sm btn--primary"
                     disabled={zipBusy || zipPreview.errors.length > 0}
-                    onClick={() => void handleImportZip()}
+                    onClick={() =>
+                      void (pluginUrl.trim() && !zipFile
+                        ? handleUrlInstall()
+                        : handleImportZip())
+                    }
                   >
                     {t('skills.zipInstall')}
                   </button>
                 </div>
               </div>
             )}
-          </details>
+          </div>
 
           {installedPacks.length > 0 && (
             <div className="card" style={{ marginTop: 14 }}>
@@ -501,6 +590,9 @@ export default function SkillsPage() {
                     <span className="mono faint">
                       {p.pack_id}@{p.version}
                     </span>{' '}
+                    {p.format ? (
+                      <span className="badge badge--draft">{p.format}</span>
+                    ) : null}{' '}
                     <span className={`badge badge--${p.status === 'active' ? 'active' : 'draft'}`}>
                       {p.status}
                     </span>

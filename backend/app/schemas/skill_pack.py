@@ -26,6 +26,8 @@ class PackArchivePreview(BaseModel):
     version: str
     name: str
     description: str = ""
+    origin: str | None = None
+    source_url: str | None = None
     permissions_requested: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     skills: list[PackSkillPreview] = Field(default_factory=list)
@@ -49,6 +51,7 @@ class InstalledPackSummary(ORMModel):
     version: str
     name: str
     description: str
+    format: str = "nous-pack/2"
     status: str
     permissions: list[str] = Field(default_factory=list)
     permissions_requested: list[str] = Field(default_factory=list)

@@ -1,0 +1,13 @@
+{
+  "format": "nous-plugin/1",
+  "id": "nous.hello-plugin",
+  "name": "Hello Plugin",
+  "version": "1.0.0",
+  "description": "Minimal stable Nous plugin (playbook only, no scripts).",
+  "author": "nous",
+  "license": "MIT",
+  "min_nous": "0.2.0",
+  "tags": ["example", "plugin"],
+  "permissions": [],
+  "skills": ["skills/hello"]
+}
