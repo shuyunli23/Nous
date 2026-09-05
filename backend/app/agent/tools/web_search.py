@@ -1,9 +1,11 @@
 """Web search backends used by the ``web_search`` tool.
 
-Order when ``WEB_SEARCH_PROVIDER=auto``:
+Order when the resolved provider is ``auto``:
 1. Brave / Tavily / Serper if the matching API key is set
 2. DuckDuckGo HTML scrape (fast free path)
 3. ``ddgs`` with pinned backends (bing → duckduckgo → brave)
+
+DeepSeek official search (Harness ``web_search_20250305``) is opt-in only.
 """
 
 from __future__ import annotations
@@ -12,11 +14,11 @@ import asyncio
 import re
 from html import unescape
 from typing import Any
-from urllib.parse import quote_plus, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 
-from app.core.config import settings
+from app.agent.search_config import ResolvedSearch, planned_backends, resolve_search
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -58,11 +60,13 @@ def _dedupe(rows: list[dict[str, str]], limit: int) -> list[dict[str, str]]:
     return out
 
 
-async def _search_brave(query: str, limit: int) -> list[dict[str, str]]:
-    key = (settings.brave_search_api_key or "").strip()
+async def _search_brave(
+    query: str, limit: int, cfg: ResolvedSearch
+) -> list[dict[str, str]]:
+    key = cfg.brave_search_api_key
     if not key:
         return []
-    async with httpx.AsyncClient(timeout=settings.web_search_timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
         r = await client.get(
             "https://api.search.brave.com/res/v1/web/search",
             params={"q": query, "count": limit},
@@ -87,11 +91,13 @@ async def _search_brave(query: str, limit: int) -> list[dict[str, str]]:
     return rows
 
 
-async def _search_tavily(query: str, limit: int) -> list[dict[str, str]]:
-    key = (settings.tavily_api_key or "").strip()
+async def _search_tavily(
+    query: str, limit: int, cfg: ResolvedSearch
+) -> list[dict[str, str]]:
+    key = cfg.tavily_api_key
     if not key:
         return []
-    async with httpx.AsyncClient(timeout=settings.web_search_timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
         r = await client.post(
             "https://api.tavily.com/search",
             json={
@@ -112,11 +118,13 @@ async def _search_tavily(query: str, limit: int) -> list[dict[str, str]]:
     return rows
 
 
-async def _search_serper(query: str, limit: int) -> list[dict[str, str]]:
-    key = (settings.serper_api_key or "").strip()
+async def _search_serper(
+    query: str, limit: int, cfg: ResolvedSearch
+) -> list[dict[str, str]]:
+    key = cfg.serper_api_key
     if not key:
         return []
-    async with httpx.AsyncClient(timeout=settings.web_search_timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
         r = await client.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": key, "Content-Type": "application/json"},
@@ -138,7 +146,9 @@ async def _search_serper(query: str, limit: int) -> list[dict[str, str]]:
     return rows
 
 
-def _search_ddgs_sync(query: str, limit: int) -> list[dict[str, str]]:
+def _search_ddgs_sync(
+    query: str, limit: int, cfg: ResolvedSearch
+) -> list[dict[str, str]]:
     """Query ddgs with a short backend list (avoid auto's multi-engine timeouts)."""
     try:
         from ddgs import DDGS
@@ -150,10 +160,10 @@ def _search_ddgs_sync(query: str, limit: int) -> list[dict[str, str]]:
     # Prefer engines that work from restricted networks; skip wikipedia/yandex/etc.
     backends = [
         b.strip()
-        for b in (settings.web_search_ddgs_backends or "bing,duckduckgo,brave").split(",")
+        for b in (cfg.ddgs_backends or "bing,duckduckgo,brave").split(",")
         if b.strip()
     ]
-    timeout = max(3, min(int(settings.web_search_timeout_seconds or 15), 20))
+    timeout = max(3, min(int(cfg.timeout_seconds or 15), 20))
 
     for backend in backends:
         try:
@@ -179,8 +189,10 @@ def _search_ddgs_sync(query: str, limit: int) -> list[dict[str, str]]:
     return []
 
 
-async def _search_ddgs(query: str, limit: int) -> list[dict[str, str]]:
-    return await asyncio.to_thread(_search_ddgs_sync, query, limit)
+async def _search_ddgs(
+    query: str, limit: int, cfg: ResolvedSearch
+) -> list[dict[str, str]]:
+    return await asyncio.to_thread(_search_ddgs_sync, query, limit, cfg)
 
 
 def _strip_tags(value: str) -> str:
@@ -203,9 +215,11 @@ def _unwrap_ddg_href(url: str) -> str:
     return url
 
 
-async def _search_ddg_html(query: str, limit: int) -> list[dict[str, str]]:
+async def _search_ddg_html(
+    query: str, limit: int, cfg: ResolvedSearch
+) -> list[dict[str, str]]:
     async with httpx.AsyncClient(
-        timeout=settings.web_search_timeout_seconds,
+        timeout=cfg.timeout_seconds,
         headers={"User-Agent": _BROWSER_UA},
         follow_redirects=True,
     ) as client:
@@ -241,51 +255,38 @@ async def _search_ddg_html(query: str, limit: int) -> list[dict[str, str]]:
     return out
 
 
+_HANDLERS = {
+    "brave": _search_brave,
+    "tavily": _search_tavily,
+    "serper": _search_serper,
+    "ddg_html": _search_ddg_html,
+    "ddgs": _search_ddgs,
+}
+
+
 async def run_web_search(*, query: str, max_results: int = 5) -> dict[str, Any]:
     q = (query or "").strip()
     if not q:
         return {"ok": False, "error": "query is required"}
     limit = max(1, min(int(max_results or 5), 10))
-
-    provider = (settings.web_search_provider or "auto").strip().lower()
-    backends: list[tuple[str, Any]] = []
-
-    def _paid_configured() -> list[tuple[str, Any]]:
-        ordered: list[tuple[str, Any]] = []
-        if settings.brave_search_api_key.strip():
-            ordered.append(("brave", _search_brave))
-        if settings.tavily_api_key.strip():
-            ordered.append(("tavily", _search_tavily))
-        if settings.serper_api_key.strip():
-            ordered.append(("serper", _search_serper))
-        return ordered
-
-    if provider == "brave":
-        backends = [("brave", _search_brave)]
-    elif provider == "tavily":
-        backends = [("tavily", _search_tavily)]
-    elif provider == "serper":
-        backends = [("serper", _search_serper)]
-    elif provider == "ddgs":
-        # HTML scrape first: faster + more reliable when metasearch engines time out.
-        backends = [("ddg_html", _search_ddg_html), ("ddgs", _search_ddgs)]
-    elif provider == "ddg_html":
-        backends = [("ddg_html", _search_ddg_html)]
-    else:
-        # auto
-        backends = _paid_configured()
-        backends.extend([("ddg_html", _search_ddg_html), ("ddgs", _search_ddgs)])
+    cfg = resolve_search()
+    names = planned_backends(cfg)
 
     errors: list[str] = []
     used = ""
     results: list[dict[str, str]] = []
 
-    for name, fn in backends:
+    for name in names:
+        if name == "deepseek":
+            from app.agent.tools.deepseek_search import search_deepseek
+
+            fn = search_deepseek
+            timeout = max(30.0, float(cfg.deepseek_timeout_seconds) + 5.0)
+        else:
+            fn = _HANDLERS[name]
+            timeout = max(5.0, float(cfg.timeout_seconds) + 5.0)
         try:
-            batch = await asyncio.wait_for(
-                fn(q, limit),
-                timeout=max(5.0, float(settings.web_search_timeout_seconds) + 5.0),
-            )
+            batch = await asyncio.wait_for(fn(q, limit, cfg), timeout=timeout)
             batch = _dedupe(batch, limit)
             if batch:
                 results = batch
@@ -307,8 +308,8 @@ async def run_web_search(*, query: str, max_results: int = 5) -> dict[str, Any]:
             "results": [],
             "error": (
                 "No web search results. Try a more specific query "
-                "(e.g. add 'github' / official site), or set BRAVE_SEARCH_API_KEY / "
-                "TAVILY_API_KEY / SERPER_API_KEY."
+                "(e.g. add 'github' / official site), or configure Brave / Tavily / "
+                "Serper / DeepSeek search on the Settings page."
             ),
             "tried": errors,
         }

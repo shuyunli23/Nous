@@ -105,7 +105,8 @@ class Settings(BaseSettings):
     # --- Web search ---
     # Primary free path: DuckDuckGo HTML scrape, then ddgs (bing/duckduckgo/brave).
     # Optional API keys (Brave / Tavily / Serper) upgrade quality when set.
-    # brave | tavily | serper | ddgs | ddg_html | auto
+    # Runtime overrides live in web_search_store (Settings UI).
+    # brave | tavily | serper | deepseek | ddgs | ddg_html | auto
     web_search_provider: str = "auto"
     brave_search_api_key: str = ""
     tavily_api_key: str = ""
@@ -113,6 +114,15 @@ class Settings(BaseSettings):
     web_search_timeout_seconds: float = 15.0
     # Comma-separated ddgs engines tried in order (not "auto" — that is too slow).
     web_search_ddgs_backends: str = "bing,duckduckgo,brave"
+    web_search_store: str = "./data/web_search.json"
+    # DeepSeek official server-side search (Harness web_search_20250305).
+    # Separate from chat: only the API key is reused when the chat endpoint is DeepSeek.
+    deepseek_search_api_key: str = ""
+    deepseek_search_base_url: str = "https://api.deepseek.com/anthropic/v1"
+    deepseek_search_model: str = "deepseek-v4-flash"
+    deepseek_search_max_tokens: int = 4096
+    deepseek_search_max_uses: int = 2
+    deepseek_search_timeout_seconds: float = 90.0
 
     # --- Skill retrieval ---
     skill_top_k: int = 3
@@ -178,6 +188,10 @@ class Settings(BaseSettings):
     @property
     def skill_packs_path(self) -> Path:
         return self.resolve_path(self.skill_packs_dir)
+
+    @property
+    def web_search_store_path(self) -> Path:
+        return self.resolve_path(self.web_search_store)
 
 
 @lru_cache

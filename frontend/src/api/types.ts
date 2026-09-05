@@ -479,3 +479,61 @@ export interface UsageSummary {
   month: UsagePeriod;
   all: UsagePeriod;
 }
+
+export type SearchProvider =
+  | 'auto'
+  | 'brave'
+  | 'tavily'
+  | 'serper'
+  | 'deepseek'
+  | 'ddgs'
+  | 'ddg_html';
+
+export type SearchKeySource = 'runtime' | 'env' | 'llm' | 'unset';
+
+export interface SearchKeyView {
+  configured: boolean;
+  source: SearchKeySource;
+  masked?: string | null;
+}
+
+export interface SearchConfigResponse {
+  provider: SearchProvider;
+  provider_source: 'runtime' | 'env';
+  env_provider: string;
+  keys: Record<string, SearchKeyView>;
+  deepseek_base_url: string;
+  deepseek_model: string;
+  deepseek_max_uses: number;
+  planned_backends: string[];
+  store_path: string;
+  providers: SearchProvider[];
+}
+
+export interface SearchConfigUpdate {
+  provider?: SearchProvider;
+  brave_search_api_key?: string | null;
+  tavily_api_key?: string | null;
+  serper_api_key?: string | null;
+  deepseek_api_key?: string | null;
+  deepseek_base_url?: string | null;
+  deepseek_model?: string | null;
+  deepseek_max_uses?: number | null;
+}
+
+export interface SearchTestResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface SearchTestResponse {
+  ok: boolean;
+  query: string;
+  provider?: string | null;
+  count: number;
+  results: SearchTestResult[];
+  tried: string[];
+  latency_ms?: number | null;
+  error?: string | null;
+}

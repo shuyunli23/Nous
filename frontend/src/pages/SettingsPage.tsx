@@ -26,6 +26,7 @@ import AppearanceSection from '../components/AppearanceSection';
 import ProviderEditor from '../components/ProviderEditor';
 import ModesSection from '../components/ModesSection';
 import MemorySection from '../components/MemorySection';
+import SearchSection from '../components/SearchSection';
 import UsageSection from '../components/UsageSection';
 import { useI18n, type MessageKey, type Vars } from '../i18n';
 
@@ -130,7 +131,15 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const hash = window.location.hash;
-    if (hash !== '#modes' && hash !== '#memory' && hash !== '#usage' && hash !== '#appearance') return;
+    if (
+      hash !== '#modes' &&
+      hash !== '#memory' &&
+      hash !== '#usage' &&
+      hash !== '#appearance' &&
+      hash !== '#search'
+    ) {
+      return;
+    }
     window.requestAnimationFrame(() => {
       document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
     });
@@ -301,6 +310,7 @@ export default function SettingsPage() {
           {t('common.retry')}
         </button>
         <AppearanceSection />
+        <SearchSection />
         <ModesSection />
         <MemorySection />
       </div>
@@ -341,6 +351,7 @@ export default function SettingsPage() {
       {notice && <div className="alert alert--info">{notice}</div>}
 
       <AppearanceSection />
+      <SearchSection />
 
       <div className="card active-llm">
         <div className="active-llm__head">
