@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { ApiError } from '../api/client';
 import {
   activateProvider,
-  checkBedrockSdk,
   createProvider,
   deactivateProvider,
   deleteProvider,
@@ -27,8 +27,38 @@ import ProviderEditor from '../components/ProviderEditor';
 import ModesSection from '../components/ModesSection';
 import MemorySection from '../components/MemorySection';
 import SearchSection from '../components/SearchSection';
+import SettingsLanguageRow from '../components/SettingsLanguageRow';
+import SettingsShell, {
+  type SettingsConfigTab,
+  type SettingsSection,
+} from '../components/SettingsShell';
 import UsageSection from '../components/UsageSection';
 import { useI18n, type MessageKey, type Vars } from '../i18n';
+
+function parseSettingsHash(hash: string): {
+  section: SettingsSection;
+  configTab: SettingsConfigTab;
+} {
+  const id = hash.replace(/^#/, '');
+  if (id === 'memory') return { section: 'memory', configTab: 'models' };
+  if (id === 'usage') return { section: 'usage', configTab: 'models' };
+  if (id === 'search') return { section: 'config', configTab: 'search' };
+  if (id === 'config') return { section: 'config', configTab: 'models' };
+  if (
+    id === 'general' ||
+    id === 'appearance' ||
+    id === 'modes' ||
+    id === 'language'
+  ) {
+    return { section: 'general', configTab: 'models' };
+  }
+  return { section: 'config', configTab: 'models' };
+}
+
+function hashFor(section: SettingsSection, configTab: SettingsConfigTab): string {
+  if (section === 'config') return configTab === 'search' ? '#search' : '#config';
+  return `#${section}`;
+}
 
 const KIND_KEY: Record<ProviderKind, MessageKey> = {
   openai_compatible: 'settings.kindOpenai',
@@ -92,6 +122,11 @@ function errorMessage(err: unknown, fallback: string): string {
 
 export default function SettingsPage() {
   const { t } = useI18n();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const parsed = parseSettingsHash(location.hash);
+  const [section, setSection] = useState<SettingsSection>(parsed.section);
+  const [configTab, setConfigTab] = useState<SettingsConfigTab>(parsed.configTab);
   const [config, setConfig] = useState<LLMConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +146,6 @@ export default function SettingsPage() {
   const [activeTest, setActiveTest] = useState<ProviderTestResponse | null>(
     null,
   );
-  const [rowTest, setRowTest] = useState<ProviderTestResponse | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -130,20 +164,42 @@ export default function SettingsPage() {
   }, [load]);
 
   useEffect(() => {
-    const hash = window.location.hash;
-    if (
-      hash !== '#modes' &&
-      hash !== '#memory' &&
-      hash !== '#usage' &&
-      hash !== '#appearance' &&
-      hash !== '#search'
-    ) {
+    const next = parseSettingsHash(location.hash);
+    setSection(next.section);
+    setConfigTab(next.configTab);
+  }, [location.hash]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !editorOpen && !document.querySelector('.modal__backdrop')) {
+        navigate('/');
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [editorOpen, navigate]);
+
+  useEffect(() => {
+    const id = location.hash.replace(/^#/, '');
+    if (!id || loading) return;
+    if (id !== 'appearance' && id !== 'modes' && id !== 'search' && id !== 'language') {
       return;
     }
     window.requestAnimationFrame(() => {
-      document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
+      document.getElementById(id)?.scrollIntoView({ block: 'start' });
     });
-  }, [loading]);
+  }, [loading, location.hash, section, configTab]);
+
+  function goSection(next: SettingsSection) {
+    setSection(next);
+    const tab = next === 'config' ? configTab : 'models';
+    navigate({ pathname: '/settings', hash: hashFor(next, tab) }, { replace: true });
+  }
+
+  function goConfigTab(next: SettingsConfigTab) {
+    setConfigTab(next);
+    navigate({ pathname: '/settings', hash: hashFor('config', next) }, { replace: true });
+  }
 
   function openEditor(provider: ProviderView | null) {
     setEditing(provider);
@@ -152,25 +208,42 @@ export default function SettingsPage() {
     setEditorOpen(true);
   }
 
-  async function handleSave(payload: ProviderCreatePayload, isEdit: boolean) {
+  async function handleSave(
+    payload: ProviderCreatePayload,
+    isEdit: boolean,
+    apply: boolean,
+  ) {
     setSaving(true);
     setEditorError(null);
     try {
-      const next =
-        isEdit && editing
-          ? await updateProvider(editing.id, payload)
-          : await createProvider({
-              ...payload,
-              activate: isChatProviderKind(payload.kind) && payload.activate !== false,
-            });
+      const chat = isChatProviderKind(payload.kind);
+      let next: LLMConfigResponse;
+      if (isEdit && editing) {
+        next = await updateProvider(editing.id, payload);
+        setConfig(next);
+        if (apply && chat && !editing.is_active) {
+          next = await activateProvider(editing.id);
+        }
+      } else {
+        next = await createProvider({
+          ...payload,
+          activate: apply && chat,
+        });
+      }
       setConfig(next);
-      setNotice(
-        isEdit
-          ? t('settings.saved', { label: payload.label })
-          : isChatProviderKind(payload.kind)
-            ? t('settings.created', { label: payload.label })
-            : t('settings.createdImage', { label: payload.label }),
-      );
+      if (apply && chat) {
+        setNotice(
+          isEdit
+            ? t('settings.applied', { label: payload.label })
+            : t('settings.created', { label: payload.label }),
+        );
+      } else if (isEdit) {
+        setNotice(t('settings.saved', { label: payload.label }));
+      } else if (chat) {
+        setNotice(t('settings.createdSaved', { label: payload.label }));
+      } else {
+        setNotice(t('settings.createdImage', { label: payload.label }));
+      }
       setEditorOpen(false);
       setEditing(null);
     } catch (err: unknown) {
@@ -180,41 +253,24 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleEditorTest(payload: ProviderCreatePayload) {
+  async function handleEditorTest(
+    payload: ProviderCreatePayload,
+    useSaved: boolean,
+  ) {
     setTesting(true);
     setEditorTest(null);
     try {
-      setEditorTest(await testProvider({ draft: payload }));
+      setEditorTest(
+        await testProvider(
+          useSaved && editing
+            ? { providerId: editing.id }
+            : { draft: payload },
+        ),
+      );
     } catch (err: unknown) {
       setEditorError(errorMessage(err, t('settings.testFailed')));
     } finally {
       setTesting(false);
-    }
-  }
-
-  async function handleRowTest(provider: ProviderView) {
-    setBusyId(provider.id);
-    setRowTest(null);
-    setError(null);
-    try {
-      setRowTest(await testProvider({ providerId: provider.id }));
-    } catch (err: unknown) {
-      setError(errorMessage(err, t('settings.testFailed')));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function handleActivate(provider: ProviderView) {
-    setBusyId(provider.id);
-    setError(null);
-    try {
-      setConfig(await activateProvider(provider.id));
-      setNotice(t('settings.activated', { label: provider.label }));
-    } catch (err: unknown) {
-      setError(errorMessage(err, t('settings.switchFailed')));
-    } finally {
-      setBusyId(null);
     }
   }
 
@@ -270,88 +326,66 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleBedrockCheck() {
-    setError(null);
-    try {
-      const result = await checkBedrockSdk();
-      setNotice(
-        result.message ??
-          (result.ok ? t('settings.botoOk') : t('settings.botoMissing')),
-      );
-    } catch (err: unknown) {
-      setError(errorMessage(err, t('settings.checkFailed')));
-    }
-  }
+  const active = config?.active;
+  const env = config?.env_defaults;
+  const providers = config?.providers ?? [];
+  const presets = config?.presets ?? [];
+  const usingEnv = active?.source === 'env';
 
-  if (loading) {
-    return (
-      <div className="page">
-        <div className="empty row" style={{ justifyContent: 'center' }}>
-          <span className="spinner" aria-hidden="true" />
-          <span>{t('common.loading')}</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (!config) {
-    return (
-      <div className="page">
-        <div className="page__header">
-          <div>
-            <h1 className="page__title">{t('settings.title')}</h1>
-            <p className="page__subtitle">{t('settings.subtitle')}</p>
-          </div>
-        </div>
-        <div className="alert alert--error">
-          {error ?? t('settings.cannotLoad')}
-        </div>
-        <button type="button" className="btn" onClick={() => void load()}>
-          {t('common.retry')}
-        </button>
-        <AppearanceSection />
-        <SearchSection />
-        <ModesSection />
-        <MemorySection />
-      </div>
-    );
-  }
-
-  const { active, env_defaults: env, providers, presets } = config;
-  const usingEnv = active.source === 'env';
+  const addProviderButton = (
+    <button
+      type="button"
+      className="btn btn--sm btn--primary"
+      onClick={() => openEditor(null)}
+      disabled={!config?.enabled}
+    >
+      {t('settings.addProvider')}
+    </button>
+  );
 
   return (
-    <div className="page">
-      <div className="page__header">
-        <div>
-          <h1 className="page__title">{t('settings.title')}</h1>
-          <p className="page__subtitle">{t('settings.subtitle')}</p>
+    <>
+      <SettingsShell
+        section={section}
+        configTab={configTab}
+        onSection={goSection}
+        onConfigTab={goConfigTab}
+        onClose={() => navigate('/')}
+      >
+        <div hidden={section !== 'general'}>
+          <SettingsLanguageRow />
+          <AppearanceSection />
+          <ModesSection />
         </div>
-        <div className="row">
-          <button type="button" className="btn btn--sm" onClick={handleBedrockCheck}>
-            {t('settings.checkBedrock')}
-          </button>
-          <button
-            type="button"
-            className="btn btn--sm btn--primary"
-            onClick={() => openEditor(null)}
-            disabled={!config.enabled}
-          >
-            {t('settings.addProvider')}
-          </button>
-        </div>
-      </div>
 
-      {!config.enabled && (
-        <div className="alert alert--warning">
-          {t('settings.runtimeDisabled')}
+        <div hidden={!(section === 'config' && configTab === 'search')}>
+          <SearchSection hideHeading />
         </div>
-      )}
-      {error && <div className="alert alert--error">{error}</div>}
-      {notice && <div className="alert alert--info">{notice}</div>}
 
-      <AppearanceSection />
-      <SearchSection />
+        <div hidden={!(section === 'config' && configTab === 'models')}>
+          {loading ? (
+            <div className="empty row" style={{ justifyContent: 'center' }}>
+              <span className="spinner" aria-hidden="true" />
+              <span>{t('common.loading')}</span>
+            </div>
+          ) : !config || !active || !env ? (
+            <>
+              <div className="alert alert--error">
+                {error ?? t('settings.cannotLoad')}
+              </div>
+              <button type="button" className="btn" onClick={() => void load()}>
+                {t('common.retry')}
+              </button>
+            </>
+          ) : (
+            <>
+              {!config.enabled && (
+                <div className="alert alert--warning">
+                  {t('settings.runtimeDisabled')}
+                </div>
+              )}
+              {error && <div className="alert alert--error">{error}</div>}
+              {notice && <div className="alert alert--info">{notice}</div>}
 
       <div className="card active-llm">
         <div className="active-llm__head">
@@ -463,15 +497,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <h2 className="section__title section__title--spaced">
-        {t('settings.savedProviders')}
-      </h2>
-
-      {rowTest && (
-        <div className={`alert ${rowTest.ok ? 'alert--info' : 'alert--error'}`}>
-          {describeTest(rowTest, t)}
-        </div>
-      )}
+      <div className="settings-block-head">
+        <h2 className="section__title">{t('settings.savedProviders')}</h2>
+        {addProviderButton}
+      </div>
 
       {providers.length === 0 ? (
         <div className="empty">
@@ -494,7 +523,15 @@ export default function SettingsPage() {
               {providers.map((p) => (
                 <tr key={p.id}>
                   <td>
-                    {p.label}
+                    <button
+                      type="button"
+                      className="table-name"
+                      title={t('common.edit')}
+                      disabled={!config.enabled || busyId === p.id}
+                      onClick={() => openEditor(p)}
+                    >
+                      {p.label}
+                    </button>
                     {p.is_active && (
                       <span className="badge badge--active" style={{ marginLeft: 8 }}>
                         {t('settings.inUse')}
@@ -520,39 +557,47 @@ export default function SettingsPage() {
                   </td>
                   <td>
                     <div className="table__actions">
-                      {isChatProviderKind(p.kind) ? (
                       <button
                         type="button"
-                        className="btn btn--sm"
-                        disabled={busyId === p.id || p.is_active}
-                        onClick={() => void handleActivate(p)}
-                      >
-                        {p.is_active ? t('common.enabled') : t('common.enable')}
-                      </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="btn btn--sm"
-                        disabled={busyId === p.id}
-                        onClick={() => void handleRowTest(p)}
-                      >
-                        {t('skills.probe')}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--sm"
-                        disabled={busyId === p.id}
-                        onClick={() => openEditor(p)}
-                      >
-                        {t('common.edit')}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--sm btn--danger"
-                        disabled={busyId === p.id}
+                        className="btn btn--icon btn--danger"
+                        aria-label={t('common.delete')}
+                        title={t('common.delete')}
+                        disabled={!config.enabled || busyId === p.id}
                         onClick={() => void handleDelete(p)}
                       >
-                        {t('common.delete')}
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M9.4 5.4c0-1 .8-1.8 1.8-1.8h1.6c1 0 1.8.8 1.8 1.8"
+                            stroke="currentColor"
+                            strokeWidth="2.15"
+                            strokeLinecap="round"
+                          />
+                          <path
+                            d="M5 7.4h14"
+                            stroke="currentColor"
+                            strokeWidth="2.15"
+                            strokeLinecap="round"
+                          />
+                          <path
+                            d="M7.3 7.4v10.1c0 1.2.9 2.1 2.1 2.1h5.2c1.2 0 2.1-.9 2.1-2.1V7.4"
+                            stroke="currentColor"
+                            strokeWidth="2.15"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M10 11.3v5M12 11.3v5M14 11.3v5"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                          />
+                        </svg>
                       </button>
                     </div>
                   </td>
@@ -599,10 +644,18 @@ export default function SettingsPage() {
       <p className="faint" style={{ fontSize: 12, marginTop: 16 }}>
         {t('settings.storeHint', { path: config.store_path })}
       </p>
+            </>
+          )}
+        </div>
 
-      <UsageSection />
-      <ModesSection />
-      <MemorySection />
+        <div hidden={section !== 'memory'}>
+          <MemorySection />
+        </div>
+
+        <div hidden={section !== 'usage'}>
+          <UsageSection />
+        </div>
+      </SettingsShell>
 
       <ProviderEditor
         provider={editing}
@@ -620,6 +673,6 @@ export default function SettingsPage() {
         onSave={handleSave}
         onTest={handleEditorTest}
       />
-    </div>
+    </>
   );
 }

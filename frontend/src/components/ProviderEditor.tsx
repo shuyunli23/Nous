@@ -6,6 +6,7 @@ import type {
   ProviderKind,
   ProviderView,
 } from '../api/types';
+import { isChatProviderKind } from '../api/types';
 import { useI18n } from '../i18n';
 
 interface ProviderEditorProps {
@@ -19,8 +20,12 @@ interface ProviderEditorProps {
   testResult?: string | null;
   testOk?: boolean;
   onClose: () => void;
-  onSave: (payload: ProviderCreatePayload, isEdit: boolean) => void;
-  onTest: (payload: ProviderCreatePayload) => void;
+  onSave: (
+    payload: ProviderCreatePayload,
+    isEdit: boolean,
+    apply: boolean,
+  ) => void;
+  onTest: (payload: ProviderCreatePayload, useSaved: boolean) => void;
 }
 
 const KIND_LABEL = {
@@ -171,10 +176,7 @@ export default function ProviderEditor({
           ? null
           : Number(form.max_tokens);
 
-    if (form.kind === 'huggingface_image') {
-      payload.activate = false;
-    }
-
+    payload.activate = false;
     return payload;
   }
 
@@ -189,15 +191,39 @@ export default function ProviderEditor({
         ? true
         : form.base_url.trim() !== '');
 
-  // A draft probe needs a usable key. Bedrock can rely on the ambient AWS
-  // credential chain, so it is always testable.
+  const replacingSecret =
+    form.api_key.trim() !== '' ||
+    form.aws_access_key_id.trim() !== '' ||
+    form.aws_secret_access_key.trim() !== '' ||
+    Boolean(cleared.api_key) ||
+    Boolean(cleared.aws_access_key_id) ||
+    Boolean(cleared.aws_secret_access_key);
+  const hasSavedCreds = Boolean(provider?.has_credentials);
+  // Create: local models may have no key. Edit: reuse stored creds unless
+  // the user cleared them. Bedrock can use the ambient AWS chain.
   const canTest =
-    requiredFilled && (isBedrock || form.api_key.trim() !== '' || !isEdit);
+    requiredFilled &&
+    (isBedrock ||
+      form.api_key.trim() !== '' ||
+      !isEdit ||
+      (hasSavedCreds && !cleared.api_key));
+  const canApply = requiredFilled && isChatProviderKind(form.kind);
+  const alreadyApplied = isEdit && Boolean(provider?.is_active) && canApply;
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!requiredFilled) return;
-    onSave(buildPayload(), isEdit);
+    onSave(buildPayload(), isEdit, false);
+  }
+
+  function handleApply() {
+    if (!canApply || alreadyApplied || saving) return;
+    onSave(buildPayload(), isEdit, true);
+  }
+
+  function handleTest() {
+    if (!canTest || testing || saving) return;
+    onTest(buildPayload(), isEdit && !replacingSecret);
   }
 
   function renderSecret(
@@ -519,7 +545,7 @@ export default function ProviderEditor({
             type="button"
             className="btn"
             disabled={!canTest || testing || saving}
-            onClick={() => onTest(buildPayload())}
+            onClick={handleTest}
             title={
               canTest ? t('provider.testTitle') : t('provider.testNeedKey')
             }
@@ -528,17 +554,26 @@ export default function ProviderEditor({
           </button>
           <button
             type="submit"
-            className="btn btn--primary"
+            className={canApply && !alreadyApplied ? 'btn' : 'btn btn--primary'}
             disabled={saving || !requiredFilled}
           >
-            {saving
-              ? t('common.saving')
-              : isEdit
-                ? t('common.save')
-                : isHfImage
-                  ? t('provider.saveOnly')
-                  : t('provider.saveActivate')}
+            {saving ? t('common.saving') : t('common.save')}
           </button>
+          {canApply ? (
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={saving || !requiredFilled || alreadyApplied}
+              onClick={handleApply}
+              title={
+                alreadyApplied
+                  ? t('provider.applied')
+                  : t('provider.applyHint')
+              }
+            >
+              {alreadyApplied ? t('provider.applied') : t('provider.apply')}
+            </button>
+          ) : null}
         </div>
       </form>
     </div>

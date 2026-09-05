@@ -106,7 +106,11 @@ function previewBackends(
   return [...paid, 'ddg_html', 'ddgs'];
 }
 
-export default function SearchSection() {
+export default function SearchSection({
+  hideHeading = false,
+}: {
+  hideHeading?: boolean;
+}) {
   const { t } = useI18n();
   const [config, setConfig] = useState<SearchConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -301,7 +305,9 @@ export default function SearchSection() {
 
   return (
     <section id="search" className="section">
-      <h2 className="section__title">{t('search.title')}</h2>
+      {hideHeading ? null : (
+        <h2 className="section__title">{t('search.title')}</h2>
+      )}
       <div className="card">
         <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
           {t('search.lead')}
