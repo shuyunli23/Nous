@@ -17,6 +17,7 @@ from app.api.v1 import (
     search_config,
     pack_archives,
     plugins,
+    shell_config,
     skills,
     tools,
     usage,
@@ -36,6 +37,7 @@ api_router.include_router(plugins.router)
 api_router.include_router(skills.router)
 api_router.include_router(llm_config.router)
 api_router.include_router(search_config.router)
+api_router.include_router(shell_config.router)
 api_router.include_router(usage.router)
 api_router.include_router(tools.router)
 api_router.include_router(files.router)

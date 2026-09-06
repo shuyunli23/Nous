@@ -37,7 +37,7 @@ Nous 会在会话结束后判断这段对话是否包含可复用的经验，如
 | 特性 | 说明 |
 | --- | --- |
 | **Nous Agent** | LangGraph：记忆 → 检索 Skill → 组装提示 → 调用模型（可循环工具）→ 持久化 |
-| **内置工具** | 网页搜索、抓取页面、查天气、生成 PPT / 网页 Demo、计算器、当前时间 |
+| **内置工具** | 网页搜索、抓取页面、查天气、生成 PPT / 网页 Demo、计算器、当前时间、命令执行（沙箱，需显式开启） |
 | **会话预览** | 工具产出的 HTML 网页和 SVG 图在对话里直接预览，可切换源码 |
 | **Skill 包导入** | 一键导入内置能力包，或粘贴 JSON（Claude / WorkBuddy 风格 playbook） |
 | **插件** | 稳定 `nous-plugin/1`；zip / GitHub 导入；兼容 nous-pack/2 与 DeepSeek Harness（`dsh`）仓库 |
@@ -382,6 +382,33 @@ CORS_ORIGINS=http://localhost:3000
 | `MEMORY_MAX_CHARS` | `8000` | 上下文字符上限 |
 | `AGENT_MAX_TOOL_LOOPS` | `4` | 工具调用循环上限，防止死循环 |
 
+### 命令执行工具（沙箱）
+
+思路移植自 DeepSeek Harness 的 `shell/` + `sandbox/`：给 Agent 一个 `run_command` 工具，在**受限工作区**里执行真实命令（看文件、跑脚本、git、构建测试），并返回 stdout/stderr 与退出码。**默认关闭**——这是很大的安全面，需在信任的机器上显式打开。
+
+> **开关放在 UI 里**：进「设置 → 通用 → 命令执行」可直接切换启用/关闭、选择默认沙箱模式，即时生效、无需改 `.env` 或重启。运行时覆盖存在 `data/shell_config.json`（已 gitignore）。**唯独提权上限 `SHELL_MAX_MODE` 只认 `.env`**——前端永远无法调高这个安全上限，因此 UI 不可能自行放开 `danger-full-access`。下面的表是 `.env` 兜底默认值。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHELL_TOOL_ENABLED` | `false` | 总开关。为 `false` 时该工具既不进 schema 也不可执行 |
+| `SHELL_WORKSPACE_DIR` | `./data/shell_workspace` | 工作区根目录；每次调用的 cwd 都被限制在其内部 |
+| `SHELL_DEFAULT_MODE` | `workspace-write` | 未申请提权时的默认模式 |
+| `SHELL_MAX_MODE` | `workspace-write` | 允许提权到的**上限**。Nous 无交互式审批，所以这个上限就是同意闸门 |
+| `SHELL_OS_SANDBOX` | `auto` | `auto` 时在 Linux/macOS 用 bubblewrap / sandbox-exec 做内核级隔离；`off` 强制降级 |
+| `SHELL_NETWORK_ENABLED` | `false` | 是否放行网络（仅在有内核后端时才真正强制） |
+| `SHELL_TIMEOUT_SECONDS` / `SHELL_TIMEOUT_CAP_SECONDS` | `60` / `300` | 单次默认超时与硬上限 |
+| `SHELL_STDOUT_CAP_BYTES` | `262144` | 输出上限，超出保留尾部并标记截断 |
+
+隔离是**纵深防御**，并对平台差异保持诚实：
+
+1. **总开关**——默认不暴露该工具。
+2. **工作区限制**——cwd 与 `workdir` 解析后必须落在工作区根内，越界直接拒绝（不 spawn）。命令**无状态**：进程间不保留 shell 状态，用 `workdir` 而不是 `cd`。
+3. **命令策略**——始终生效的「灾难性命令」黑名单（`rm -rf /`、fork bomb、磁盘擦写、关机等，任何模式都拦）；当 `read-only` 只能「建议式」强制时，额外拦截写重定向与会改文件的命令。
+4. **内核沙箱（尽力而为）**——Linux 上 `bwrap`、macOS 上 `sandbox-exec` 存在时做真正的文件系统限制；无后端的平台（如 Windows）退化为 cwd + 黑名单，结果里以 `enforcement=advisory` 如实标注。
+5. **环境擦洗 + 超时 + 输出上限**——子进程只继承最小白名单环境（不泄露任何凭证）。
+
+模式（安全序）：`read-only` < `workspace-write` < `danger-full-access`。模型被拦时可**一次性**带 `sandbox_permissions` + `justification` 申请更宽模式，但不能超过 `SHELL_MAX_MODE`；要放开 `danger-full-access` 必须由运维把上限调高。
+
 ### Skill 检索
 
 | 变量 | 默认值 | 说明 |
@@ -444,7 +471,7 @@ load_memory → retrieve_skills → compose_prompt → llm_call
 | `retrieve_skills` | 混合检索相关 Skill，并写入使用台账 |
 | `compose_prompt` | 把 Skill 的步骤和指令编排进系统提示 |
 | `llm_call` | 调用模型；请求工具调用时走条件边循环 |
-| `tool_executor` | 执行内置工具（搜索、天气、PPT、网页 Demo、计算器等） |
+| `tool_executor` | 执行内置工具（搜索、天气、PPT、网页 Demo、计算器、命令执行等） |
 | `persist` | 落库消息、token 用量、以及本次用到的 Skill ID（审计轨迹） |
 
 ### Skill 提取链
@@ -613,6 +640,7 @@ python -m tests.smoke_phase2      # 对话 / Agent（mock 掉 LLM）
 python -m tests.smoke_phase3      # Skill 提取与管理（mock 掉 LLM）
 python -m tests.smoke_phase4      # 嵌入、向量库、混合检索
 python -m tests.smoke_llm_config  # 运行时模型配置（含 Bedrock 报文转换）
+python -m tests.test_shell_tool   # 命令执行工具：隔离策略 + 本机真实执行
 python -m tests.check_migration   # 校验 Alembic 迁移与 ORM 模型一致
 ```
 

@@ -575,3 +575,25 @@ export interface SearchTestResponse {
   latency_ms?: number | null;
   error?: string | null;
 }
+
+export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
+
+export interface ShellConfigResponse {
+  enabled: boolean;
+  enabled_source: 'runtime' | 'env';
+  default_mode: SandboxMode;
+  default_mode_source: 'runtime' | 'env';
+  max_mode: SandboxMode;
+  modes: SandboxMode[];
+  workspace_path: string;
+  os_sandbox: string;
+  enforcement: 'strict' | 'advisory';
+  backend?: string | null;
+  network: boolean;
+  store_path: string;
+}
+
+export interface ShellConfigUpdate {
+  enabled?: boolean;
+  default_mode?: SandboxMode;
+}

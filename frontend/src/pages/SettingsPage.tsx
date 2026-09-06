@@ -32,6 +32,7 @@ import SettingsShell, {
   type SettingsConfigTab,
   type SettingsSection,
 } from '../components/SettingsShell';
+import ToolsSection from '../components/ToolsSection';
 import UsageSection from '../components/UsageSection';
 import { useI18n, type MessageKey, type Vars } from '../i18n';
 
@@ -356,6 +357,7 @@ export default function SettingsPage() {
           <SettingsLanguageRow />
           <AppearanceSection />
           <ModesSection />
+          <ToolsSection />
         </div>
 
         <div hidden={!(section === 'config' && configTab === 'search')}>

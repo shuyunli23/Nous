@@ -7,6 +7,7 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeSlug from 'rehype-slug';
+import type { PluggableList } from 'unified';
 import 'katex/dist/katex.min.css';
 
 import type { ExecutionStep } from '../api/types';
@@ -535,7 +536,7 @@ export default function MarkdownContent({
     );
   }
 
-  const plugins = allowHtml
+  const plugins: PluggableList = allowHtml
     ? [
         rehypeRaw,
         [rehypeSanitize, knowledgeSchema],

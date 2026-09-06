@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 
 import { api, ApiError } from '../api/client';
 import { useI18n, type Locale } from '../i18n';

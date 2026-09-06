@@ -526,7 +526,80 @@ _TOOLS: dict[str, dict[str, Any]] = {
         },
         "handler": builtins.current_datetime,
     },
+    "run_command": {
+        "description": (
+            "Execute a shell command on the host inside a confined sandbox "
+            "workspace, and return its stdout/stderr and exit code. "
+            "Use for real tasks: inspect files, run scripts, git, build/test, "
+            "data wrangling. STATELESS — no shell state persists between calls, "
+            "so pass `workdir` instead of using `cd`. "
+            "ALWAYS check the `[exit code: N]` marker on every result and "
+            "investigate a nonzero exit before moving on. "
+            "The command runs in `read-only` or `workspace-write` mode; if a "
+            "call is blocked because it needs to write, retry ONCE with "
+            "`sandbox_permissions='workspace-write'` and a one-sentence "
+            "`justification`. Do not attempt destructive, system-wide, or "
+            "network-exfiltration commands."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The command line to run (via the platform shell).",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "One-line, active-voice summary (5-10 words), for display only.",
+                },
+                "workdir": {
+                    "type": "string",
+                    "description": (
+                        "Working directory for this call, relative to (or inside) "
+                        "the sandbox workspace root. Defaults to the workspace root."
+                    ),
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "description": "Timeout override in milliseconds (capped by the executor).",
+                },
+                "sandbox_permissions": {
+                    "type": "string",
+                    "enum": ["workspace-write", "danger-full-access"],
+                    "description": (
+                        "Request a WIDER mode than the standing default when a "
+                        "command was denied. Requires `justification`."
+                    ),
+                },
+                "justification": {
+                    "type": "string",
+                    "description": (
+                        "One sentence explaining why this exact command needs the "
+                        "wider access. Required with `sandbox_permissions`."
+                    ),
+                },
+            },
+            "required": ["command"],
+        },
+        "handler": builtins.run_command,
+    },
 }
+
+def _shell_gate() -> bool:
+    from app.agent.tools.shell_config import resolve_shell
+
+    return resolve_shell().enabled
+
+
+# Tools that are only advertised / executable when a config flag enables them.
+_GATED_TOOLS: dict[str, Callable[[], bool]] = {
+    "run_command": _shell_gate,
+}
+
+
+def _tool_available(name: str) -> bool:
+    gate = _GATED_TOOLS.get(name)
+    return gate() if gate is not None else True
 
 
 async def openai_tool_schemas(
@@ -551,7 +624,7 @@ async def openai_tool_schemas(
             },
         }
         for name, meta in _TOOLS.items()
-        if allowed is None or name in allowed
+        if (allowed is None or name in allowed) and _tool_available(name)
     ]
     if include_packs and session is not None and user_id and allowed is None:
         from app.services.pack_service import PackService
@@ -573,6 +646,7 @@ def list_tool_catalog() -> list[dict[str, Any]]:
             "parameters": meta["parameters"],
         }
         for name, meta in _TOOLS.items()
+        if _tool_available(name)
     ]
 
 

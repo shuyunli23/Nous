@@ -616,6 +616,36 @@ async def generate_image(
 # ── crop_image ─────────────────────────────────────────────────────────────
 
 
+# ── run_command ────────────────────────────────────────────────────────────
+
+
+async def run_command(
+    *,
+    command: str | None = None,
+    description: str | None = None,
+    workdir: str | None = None,
+    timeout_ms: int | None = None,
+    sandbox_permissions: str | None = None,
+    justification: str | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Execute an OS command in a confined workspace. See ``app.agent.tools.shell``."""
+    from app.agent.tools.shell import run_command as _run
+
+    return await _run(
+        command=command,
+        description=description,
+        workdir=workdir,
+        timeout_ms=timeout_ms,
+        sandbox_permissions=sandbox_permissions,
+        justification=justification,
+        **extra,
+    )
+
+
+# ── crop_image ─────────────────────────────────────────────────────────────
+
+
 async def crop_image(
     *,
     src: str,

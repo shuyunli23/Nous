@@ -69,6 +69,7 @@ export function applyLiveTrace(
   if (ev.type === 'token' && ev.text) {
     for (let i = prev.length - 1; i >= 0; i -= 1) {
       const step = prev[i];
+      if (!step) continue;
       if (step.status === 'running' && step.kind === 'think') {
         const next = prev.slice();
         next[i] = { ...step, detail: `${step.detail || ''}${ev.text}` };

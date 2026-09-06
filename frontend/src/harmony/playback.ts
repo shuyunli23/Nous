@@ -31,7 +31,8 @@ export type PlayMode = (typeof PLAY_MODES)[number];
 
 export function nextPlayMode(mode: string): PlayMode {
   const idx = PLAY_MODES.indexOf(mode as PlayMode);
-  return PLAY_MODES[(idx + 1) % PLAY_MODES.length];
+  // (idx + 1) % length is always a valid index (idx === -1 maps to 0).
+  return PLAY_MODES[(idx + 1) % PLAY_MODES.length]!;
 }
 
 export function loadPlayback(): PlaybackSession | null {

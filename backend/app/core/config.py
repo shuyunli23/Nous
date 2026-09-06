@@ -90,6 +90,34 @@ class Settings(BaseSettings):
     skill_pack_tool_stdout_cap_bytes: int = 1 * 1024 * 1024
     skill_pack_max_tools_in_prompt: int = 32
 
+    # --- Shell tool (command execution, ported from Harness shell/ + sandbox/) ---
+    # OFF by default: this is a large security surface. Enable explicitly to let
+    # the agent run OS commands inside a confined workspace.
+    shell_tool_enabled: bool = False
+    # Durable workspace root; every command runs with cwd confined under it.
+    shell_workspace_dir: str = "./data/shell_workspace"
+    # Sandbox mode vocabulary (fail-safe order): read-only < workspace-write <
+    # danger-full-access. `default` is used when the model does not escalate;
+    # `max` is the operator-controlled ceiling a call may escalate up to. There
+    # is no interactive approval in Nous, so `max` IS the consent gate —
+    # danger-full-access is only reachable when an operator raises it here.
+    shell_default_mode: Literal[
+        "read-only", "workspace-write", "danger-full-access"
+    ] = "workspace-write"
+    shell_max_mode: Literal[
+        "read-only", "workspace-write", "danger-full-access"
+    ] = "workspace-write"
+    # Use a kernel-level sandbox backend when present (bubblewrap on Linux,
+    # sandbox-exec on macOS). "off" forces the advisory (cwd + denylist) path.
+    shell_os_sandbox: Literal["auto", "off"] = "auto"
+    # Best-effort network flag (advisory unless an OS backend enforces it).
+    shell_network_enabled: bool = False
+    shell_timeout_seconds: int = 60
+    shell_timeout_cap_seconds: int = 300
+    shell_stdout_cap_bytes: int = 256 * 1024
+    # Runtime overlay written by the Settings UI (enable toggle + standing mode).
+    shell_config_store: str = "./data/shell_config.json"
+
     # --- Image generation ---
     # auto | openai | huggingface | bedrock
     image_provider: str = "auto"
@@ -188,6 +216,14 @@ class Settings(BaseSettings):
     @property
     def skill_packs_path(self) -> Path:
         return self.resolve_path(self.skill_packs_dir)
+
+    @property
+    def shell_workspace_path(self) -> Path:
+        return self.resolve_path(self.shell_workspace_dir)
+
+    @property
+    def shell_config_store_path(self) -> Path:
+        return self.resolve_path(self.shell_config_store)
 
     @property
     def web_search_store_path(self) -> Path:
