@@ -7,6 +7,7 @@ interface ExecutionTraceProps {
   steps: ExecutionStep[];
   defaultOpen?: boolean;
   live?: boolean;
+  label?: string;
 }
 
 const STATUS_MARK: Record<string, string> = {
@@ -93,6 +94,7 @@ export default function ExecutionTrace({
   steps,
   defaultOpen = true,
   live = false,
+  label,
 }: ExecutionTraceProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
@@ -148,7 +150,7 @@ export default function ExecutionTrace({
         <span className="exec__chevron" aria-hidden="true">
           {open ? '▾' : '▸'}
         </span>
-        <span className="exec__toggle-label">{t('exec.toggle')}</span>
+        <span className="exec__toggle-label">{label || t('exec.toggle')}</span>
         <span className="exec__toggle-meta faint">{summary}</span>
       </button>
 

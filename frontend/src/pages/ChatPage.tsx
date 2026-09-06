@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { applyLiveTrace, sendMessageStream } from '../api/chat';
 import { listChatModes, updateChatMode } from '../api/chatModes';
 import { ApiError } from '../api/client';
 import {
-  captureConversation,
   closeConversation,
-  extractTutorNotes,
   getConversation,
   listConversations,
 } from '../api/conversations';
@@ -25,6 +23,8 @@ import MessageInput from '../components/MessageInput';
 import MessageList, { type ChatHeroCopy } from '../components/MessageList';
 import NewChatDialog from '../components/NewChatDialog';
 import OverflowTitle from '../components/OverflowTitle';
+import SettleDialog, { settleResultNotice } from '../components/SettleDialog';
+import SettleIcon from '../components/SettleIcon';
 import { useI18n, type MessageKey } from '../i18n';
 
 const MODE_STORAGE = 'nous.selectedModeId';
@@ -72,28 +72,6 @@ function persistProviderId(id: string) {
   } catch {
     /* private mode */
   }
-}
-
-function HeaderIcon({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.15"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {children}
-    </svg>
-  );
 }
 
 function CloseMark() {
@@ -170,6 +148,7 @@ export default function ChatPage() {
   const [resuming, setResuming] = useState(() => !routeId && !confirmedFromNav);
   const [newChatConfirmed, setNewChatConfirmed] = useState(confirmedFromNav);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [settleOpen, setSettleOpen] = useState(false);
   const [draftModeId, setDraftModeId] = useState<string | null>(null);
   const [draftKnowledge, setDraftKnowledge] = useState(false);
   const autoOpenedPicker = useRef(false);
@@ -309,9 +288,6 @@ export default function ChatPage() {
   const modeName =
     lockedMode?.name ?? selectedMode?.name ?? t('nav.workbench');
   const canChat = Boolean(conversationId) || newChatConfirmed;
-  const isWorkbench = modeKey === 'workbench' || !modeKey;
-  const isTutor = modeKey === 'tutor';
-  const isCompanion = modeKey === 'companion';
 
   const handleSend = useCallback(
     async (text: string, files?: File[]) => {
@@ -412,72 +388,18 @@ export default function ChatPage() {
     try {
       const result = await closeConversation(conversationId);
       setStatus(result.status);
-      setNotice(
-        result.extraction_triggered
-          ? t('chat.closedExtracting')
-          : result.notes_triggered
-            ? t('chat.closedNotesQueued')
-            : result.memory_triggered
-              ? t('chat.closedPersonaQueued')
-              : t('chat.closed'),
-      );
+      setNotice(null);
       setInboxLink(Boolean(result.notes_triggered));
     } catch (err: unknown) {
       setError(err instanceof ApiError ? err.message : t('chat.closeFailed'));
     }
   }
 
-  async function handleRememberPersona() {
+  function openSettle() {
     if (!conversationId) return;
     setError(null);
     setNotice(null);
-    try {
-      const result = await captureConversation(conversationId);
-      setNotice(
-        result.memory_updated ? t('chat.personaSaved') : t('chat.personaNone'),
-      );
-    } catch (err: unknown) {
-      setError(err instanceof ApiError ? err.message : t('chat.personaFailed'));
-    }
-  }
-
-  async function handleExtractNotes() {
-    if (!conversationId) return;
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await extractTutorNotes(conversationId);
-      if (result.skipped && result.reason === 'already_extracted') {
-        setNotice(
-          result.memory_updated
-            ? t('chat.notesAlreadyRemembered', { n: result.notes.length })
-            : t('chat.notesAlready', { n: result.notes.length }),
-        );
-        setInboxLink(true);
-        return;
-      }
-      if (result.skipped) {
-        setNotice(
-          t('chat.notesSkipped', {
-            reason: t(
-              result.reason === 'too_few_messages'
-                ? 'chat.notesTooFew'
-                : 'chat.notesNothing',
-            ),
-          }),
-        );
-        setInboxLink(false);
-        return;
-      }
-      setNotice(
-        result.memory_updated
-          ? t('chat.notesSavedRemembered', { n: result.notes.length })
-          : t('chat.notesSaved', { n: result.notes.length }),
-      );
-      setInboxLink(true);
-    } catch (err: unknown) {
-      setError(err instanceof ApiError ? err.message : t('chat.notesFailed'));
-    }
+    setSettleOpen(true);
   }
 
   function openNewChatPicker() {
@@ -562,40 +484,24 @@ export default function ChatPage() {
           {closed && (
             <span className="badge badge--closed">{t('chat.closedBadge')}</span>
           )}
-          {conversationId && !closed && isTutor && (
+          {conversationId && !closed && (
             <button
               type="button"
               className="chat-btn chat-btn--ghost"
-              onClick={() => void handleExtractNotes()}
+              onClick={() => openSettle()}
             >
-              <HeaderIcon>
-                <path d="M12 3v12" />
-                <path d="M8 11l4 4 4-4" />
-                <path d="M5 21h14" />
-              </HeaderIcon>
-              {t('chat.extractNotes')}
-            </button>
-          )}
-          {conversationId && !closed && isCompanion && (
-            <button
-              type="button"
-              className="chat-btn chat-btn--ghost"
-              onClick={() => void handleRememberPersona()}
-            >
-              <HeaderIcon>
-                <path d="M12 20.5s-6.5-4.1-6.5-9.2A6.5 6.5 0 0 1 12 5a6.5 6.5 0 0 1 6.5 6.3c0 5.1-6.5 9.2-6.5 9.2z" />
-              </HeaderIcon>
-              {t('chat.rememberPersona')}
+              <SettleIcon size={14} />
+              {t('conversations.settleAction')}
             </button>
           )}
           {conversationId && !closed && (
             <button
               type="button"
               className="chat-btn chat-btn--ghost"
-              onClick={handleClose}
+              onClick={() => void handleClose()}
             >
               <CloseMark />
-              {isWorkbench ? t('chat.closeAndExtract') : t('chat.closeChat')}
+              {t('chat.close')}
             </button>
           )}
           <button
@@ -631,48 +537,36 @@ export default function ChatPage() {
           <p className="faint">{t('common.loading')}</p>
         </div>
       ) : (
-        <MessageList
-          messages={messages}
-          skillsByMessage={skillsByMessage}
-          pending={pending}
-          draftReply={draftReply}
-          liveSteps={liveSteps ?? []}
-          hero={hero}
-          onSuggestion={
-            canChat ? (text) => void handleSend(text) : undefined
-          }
-        />
-      )}
-
-      {resuming ? null : closed ? (
-        <div className="chat__composer">
-          <div className="composer__box composer__box--idle">
-            <div className="muted" style={{ flex: 1, textAlign: 'center' }}>
-              {t('chat.closedComposer')}
-              <button
-                type="button"
-                className="btn btn--sm"
-                style={{ marginLeft: 8 }}
-                onClick={handleNew}
-              >
-                {t('chat.startNew')}
-              </button>
+        <div className={closed ? 'chat__main chat__main--closed' : 'chat__main'}>
+          <MessageList
+            messages={messages}
+            skillsByMessage={skillsByMessage}
+            pending={pending}
+            draftReply={draftReply}
+            liveSteps={liveSteps ?? []}
+            hero={hero}
+            onSuggestion={
+              canChat && !closed ? (text) => void handleSend(text) : undefined
+            }
+          />
+          <MessageInput
+            onSend={handleSend}
+            disabled={pending || !canChat || closed}
+            placeholder={hero.placeholder}
+            hint={hero.hint}
+            providers={providers}
+            providerId={providerId}
+            onProviderIdChange={(id) => {
+              setProviderId(id);
+              persistProviderId(id);
+            }}
+          />
+          {closed ? (
+            <div className="chat__closed" role="status">
+              {t('chat.closedOverlayTitle')}
             </div>
-          </div>
+          ) : null}
         </div>
-      ) : (
-        <MessageInput
-          onSend={handleSend}
-          disabled={pending || !canChat}
-          placeholder={hero.placeholder}
-          hint={hero.hint}
-          providers={providers}
-          providerId={providerId}
-          onProviderIdChange={(id) => {
-            setProviderId(id);
-            persistProviderId(id);
-          }}
-        />
       )}
       {pickerOpen && (
         <NewChatDialog
@@ -689,6 +583,19 @@ export default function ChatPage() {
           onCancel={handleCancelNewChat}
         />
       )}
+      <SettleDialog
+        conversationId={conversationId}
+        open={settleOpen}
+        onClose={() => setSettleOpen(false)}
+        onDone={(result) => {
+          setNotice(settleResultNotice(result, t));
+          setInboxLink(
+            result.results.some(
+              (row) => row.kind === 'knowledge' && row.notes.length > 0,
+            ),
+          );
+        }}
+      />
     </div>
   );
 }

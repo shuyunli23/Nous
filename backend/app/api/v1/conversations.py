@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.chat_modes.catalog import COMPANION, TUTOR, WORKBENCH
 from app.core.deps import CurrentUser, PaginationDep, SessionDep
-from app.core.exceptions import ValidationError
+from app.core.exceptions import AppError, ValidationError
+from app.core.logging import get_logger
 from app.database.models.enums import ConversationStatus, ExtractionStatus
 from app.memory.facts import LANE_PERSONA
 from app.schemas.common import Page
@@ -20,8 +24,12 @@ from app.schemas.conversation import (
     ConversationSummary,
     ConversationUpdate,
     NoteExtractResult,
+    SettleProposal,
+    SettleRunRequest,
 )
 from app.services.conversation_service import ConversationService, mode_fields
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -268,3 +276,79 @@ async def capture_conversation(
         )
 
     raise ValidationError("该模式不沉淀 Skill 或档案。")
+
+
+@router.post(
+    "/{conversation_id}/settle/propose",
+    response_model=SettleProposal,
+    summary="Recommend what this chat is worth settling as",
+)
+async def propose_conversation_settle(
+    conversation_id: str,
+    session: SessionDep,
+    user: CurrentUser,
+) -> SettleProposal:
+    from app.services.settle_service import propose_settle
+
+    return await propose_settle(session, conversation_id, user_id=user.id)
+
+
+@router.post(
+    "/{conversation_id}/settle/run",
+    summary="Write the settle kinds the user confirmed",
+)
+async def run_conversation_settle(
+    conversation_id: str,
+    payload: SettleRunRequest,
+    session: SessionDep,
+    user: CurrentUser,
+) -> StreamingResponse:
+    from app.services.settle_service import run_settle_events
+
+    async def events() -> AsyncIterator[str]:
+        try:
+            async for item in run_settle_events(
+                session,
+                conversation_id,
+                user_id=user.id,
+                kinds=payload.kinds,
+            ):
+                yield f"data: {json.dumps(item, ensure_ascii=False, default=str)}\n\n"
+        except AppError as exc:
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "error",
+                        "code": exc.code,
+                        "message": exc.message,
+                        "details": exc.details,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("settle_run_failed", error=str(exc))
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "error",
+                        "code": "internal_error",
+                        "message": "Unexpected server error.",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

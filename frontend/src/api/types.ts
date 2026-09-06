@@ -118,6 +118,44 @@ export interface ConversationCaptureResult {
   detail?: string | null;
 }
 
+export type SettleKind = 'skill' | 'knowledge' | 'persona';
+
+export interface SettleProposalItem {
+  kind: SettleKind;
+  recommended: boolean;
+  confidence: number;
+  reason: string;
+}
+
+export interface SettleProposal {
+  conversation_id: string;
+  title: string;
+  mode_key?: string | null;
+  mode_name?: string | null;
+  summary: string;
+  too_few: boolean;
+  items: SettleProposalItem[];
+}
+
+export interface SettleKindResult {
+  kind: SettleKind;
+  ok: boolean;
+  skipped: boolean;
+  reason?: string | null;
+  skill_id?: string | null;
+  merged_into?: string | null;
+  notes: NoteRef[];
+  notes_skipped: boolean;
+  memory_updated: boolean;
+  error?: string | null;
+  detail?: string | null;
+}
+
+export interface SettleRunResult {
+  conversation_id: string;
+  results: SettleKindResult[];
+}
+
 // ── chat ──────────────────────────────────────────────────────────────────
 
 export interface SkillUsedInfo {

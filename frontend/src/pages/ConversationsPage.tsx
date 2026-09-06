@@ -2,33 +2,32 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { ApiError } from '../api/client';
-import { captureConversation, deleteConversation, listConversations } from '../api/conversations';
+import { deleteConversation, listConversations } from '../api/conversations';
 import type {
-  ConversationCaptureResult,
   ConversationStatus,
   ConversationSummary,
   ExtractionStatus,
 } from '../api/types';
 import OverflowTitle from '../components/OverflowTitle';
+import SettleDialog, { settleResultNotice } from '../components/SettleDialog';
+import SettleIcon from '../components/SettleIcon';
 import { useI18n, type MessageKey } from '../i18n';
 
 const PAGE_SIZE = 15;
 
-const EXTRACTION_KEY: Record<ExtractionStatus, MessageKey> = {
-  pending: 'extraction.pending',
+const SETTLE_STATUS_KEY: Record<ExtractionStatus, MessageKey> = {
+  pending: 'conversations.settlePending',
   running: 'extraction.running',
   done: 'extraction.done',
   skipped: 'extraction.skipped',
   failed: 'extraction.failed',
 };
 
-type SettleKind = 'skill' | 'knowledge' | 'persona' | 'none';
-
-function settleKind(modeKey?: string | null): SettleKind {
-  if (!modeKey || modeKey === 'workbench') return 'skill';
-  if (modeKey === 'tutor') return 'knowledge';
-  if (modeKey === 'companion') return 'persona';
-  return 'none';
+function modeBadgeClass(modeKey?: string | null): string {
+  if (modeKey === 'tutor') return 'badge badge--mode-tutor';
+  if (modeKey === 'companion') return 'badge badge--mode-companion';
+  if (modeKey && modeKey !== 'workbench') return 'badge badge--mode-custom';
+  return 'badge badge--mode';
 }
 
 function extractionBadgeClass(status: ExtractionStatus): string {
@@ -56,6 +55,7 @@ export default function ConversationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [settleId, setSettleId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,42 +82,6 @@ export default function ConversationsPage() {
     void load();
   }, [load]);
 
-  function noticeForCapture(result: ConversationCaptureResult): string {
-    if (result.kind === 'skill') {
-      if (result.skill_id) return t('conversations.extractedNew');
-      if (result.merged_into) {
-        return t('conversations.extractedMerged', {
-          reason: result.reason ?? '',
-        });
-      }
-      return t('conversations.extractedNone', {
-        reason: result.reason ?? t('conversations.noReuse'),
-      });
-    }
-    if (result.kind === 'knowledge') {
-      if (result.notes_skipped && result.reason === 'already_extracted') {
-        return result.memory_updated
-          ? t('conversations.knowledgeAlreadyRemembered', {
-              n: result.notes.length,
-            })
-          : t('conversations.knowledgeAlready', { n: result.notes.length });
-      }
-      if (result.notes_skipped && !result.memory_updated) {
-        return t('conversations.knowledgeNone', {
-          reason: result.reason ?? t('conversations.noReuse'),
-        });
-      }
-      return result.memory_updated
-        ? t('conversations.knowledgeSavedRemembered', {
-            n: result.notes.length,
-          })
-        : t('conversations.knowledgeSaved', { n: result.notes.length });
-    }
-    return result.memory_updated
-      ? t('conversations.personaSaved')
-      : t('conversations.personaNone');
-  }
-
   async function handleDelete(id: string) {
     if (!window.confirm(t('conversations.confirmDelete'))) return;
     setBusyId(id);
@@ -135,24 +99,10 @@ export default function ConversationsPage() {
     }
   }
 
-  async function handleCapture(id: string) {
-    setBusyId(id);
+  function openSettle(id: string) {
     setError(null);
     setNotice(null);
-    try {
-      setNotice(noticeForCapture(await captureConversation(id)));
-      await load();
-    } catch (err: unknown) {
-      setError(
-        err instanceof ApiError
-          ? err.code === 'llm_error'
-            ? `${err.message}${t('conversations.extractNeedKey')}`
-            : err.message
-          : t('conversations.extractFailed'),
-      );
-    } finally {
-      setBusyId(null);
-    }
+    setSettleId(id);
   }
 
   const pageStart = total === 0 ? 0 : offset + 1;
@@ -223,7 +173,6 @@ export default function ConversationsPage() {
               </thead>
               <tbody>
                 {items.map((item) => {
-                  const kind = settleKind(item.mode_key);
                   return (
                     <tr key={item.id}>
                       <td>
@@ -239,7 +188,7 @@ export default function ConversationsPage() {
                         </button>
                       </td>
                       <td>
-                        <span className="badge badge--closed">
+                        <span className={modeBadgeClass(item.mode_key)}>
                           {item.mode_name || t('nav.workbench')}
                         </span>
                       </td>
@@ -257,23 +206,13 @@ export default function ConversationsPage() {
                         </span>
                       </td>
                       <td>
-                        {kind === 'skill' ? (
-                          <span
-                            className={extractionBadgeClass(
-                              item.extraction_status,
-                            )}
-                          >
-                            {t(EXTRACTION_KEY[item.extraction_status])}
-                          </span>
-                        ) : (
-                          <span className="badge badge--closed">
-                            {kind === 'knowledge'
-                              ? t('conversations.settleKnowledge')
-                              : kind === 'persona'
-                                ? t('conversations.settlePersona')
-                                : t('conversations.settleNone')}
-                          </span>
-                        )}
+                        <span
+                          className={extractionBadgeClass(
+                            item.extraction_status,
+                          )}
+                        >
+                          {t(SETTLE_STATUS_KEY[item.extraction_status])}
+                        </span>
                       </td>
                       <td className="mono">{item.message_count}</td>
                       <td className="mono faint">
@@ -286,36 +225,25 @@ export default function ConversationsPage() {
                       </td>
                       <td>
                         <div className="table__actions">
-                          {kind !== 'none' && (
-                            <button
-                              type="button"
-                              className="btn btn--sm"
-                              disabled={busyId === item.id}
-                              onClick={() => void handleCapture(item.id)}
-                              title={
-                                kind === 'skill'
-                                  ? t('conversations.extractTitle')
-                                  : kind === 'knowledge'
-                                    ? t('conversations.knowledgeTitle')
-                                    : t('conversations.personaTitle')
-                              }
-                            >
-                              {busyId === item.id
-                                ? t('common.processing')
-                                : kind === 'skill'
-                                  ? t('conversations.extractAction')
-                                  : kind === 'knowledge'
-                                    ? t('conversations.knowledgeAction')
-                                    : t('conversations.personaAction')}
-                            </button>
-                          )}
                           <button
                             type="button"
-                            className="btn btn--sm btn--danger"
+                            className="btn btn--icon"
+                            disabled={busyId === item.id}
+                            onClick={() => openSettle(item.id)}
+                            aria-label={t('conversations.settleAction')}
+                            title={t('settle.title')}
+                          >
+                            <SettleIcon />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--icon btn--danger"
                             disabled={busyId === item.id}
                             onClick={() => void handleDelete(item.id)}
+                            aria-label={t('common.delete')}
+                            title={t('common.delete')}
                           >
-                            {t('common.delete')}
+                            <TrashMark />
                           </button>
                         </div>
                       </td>
@@ -351,6 +279,53 @@ export default function ConversationsPage() {
           </div>
         </>
       )}
+      <SettleDialog
+        conversationId={settleId}
+        open={Boolean(settleId)}
+        onClose={() => setSettleId(null)}
+        onDone={(result) => {
+          setNotice(settleResultNotice(result, t));
+          void load();
+        }}
+      />
     </div>
+  );
+}
+
+function TrashMark() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M9.4 5.4c0-1 .8-1.8 1.8-1.8h1.6c1 0 1.8.8 1.8 1.8"
+        stroke="currentColor"
+        strokeWidth="2.15"
+        strokeLinecap="round"
+      />
+      <path
+        d="M5 7.4h14"
+        stroke="currentColor"
+        strokeWidth="2.15"
+        strokeLinecap="round"
+      />
+      <path
+        d="M7.3 7.4v10.1c0 1.2.9 2.1 2.1 2.1h5.2c1.2 0 2.1-.9 2.1-2.1V7.4"
+        stroke="currentColor"
+        strokeWidth="2.15"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10 11.3v5M12 11.3v5M14 11.3v5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

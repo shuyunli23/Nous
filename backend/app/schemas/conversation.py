@@ -92,3 +92,47 @@ class ConversationCaptureResult(BaseModel):
     notes_skipped: bool = False
     memory_updated: bool = False
     detail: str | None = None
+
+
+SettleKind = Literal["skill", "knowledge", "persona"]
+
+
+class SettleProposalItem(BaseModel):
+    kind: SettleKind
+    recommended: bool = False
+    confidence: float = 0.0
+    reason: str = ""
+
+
+class SettleProposal(BaseModel):
+    conversation_id: str
+    title: str
+    mode_key: str | None = None
+    mode_name: str | None = None
+    summary: str = ""
+    too_few: bool = False
+    items: list[SettleProposalItem] = Field(default_factory=list)
+
+
+class SettleKindResult(BaseModel):
+    kind: SettleKind
+    ok: bool = False
+    skipped: bool = False
+    reason: str | None = None
+    skill_id: str | None = None
+    merged_into: str | None = None
+    notes: list[NoteRef] = Field(default_factory=list)
+    notes_skipped: bool = False
+    memory_updated: bool = False
+    error: str | None = None
+    detail: str | None = None
+
+
+class SettleRunResult(BaseModel):
+    conversation_id: str
+    results: list[SettleKindResult] = Field(default_factory=list)
+
+
+class SettleRunRequest(BaseModel):
+    kinds: list[str] = Field(default_factory=list)
+

@@ -1306,6 +1306,13 @@ button.nav-link:disabled {
   align-items: center;
   justify-content: center;
   border-radius: 9px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn--icon:hover:not(:disabled) {
+  background: rgba(15, 36, 56, 0.06);
+  box-shadow: none;
 }
 
 .btn--icon.btn--danger {
@@ -1363,6 +1370,42 @@ button.nav-link:disabled {
   background: rgba(214, 69, 69, 0.1);
   color: var(--danger);
   border-color: rgba(214, 69, 69, 0.28);
+}
+
+.badge--mode {
+  background: rgba(15, 36, 56, 0.06);
+  color: #3d4d5c;
+  border-color: rgba(15, 36, 56, 0.1);
+}
+
+.badge--mode-tutor {
+  background: rgba(47, 111, 176, 0.1);
+  color: #2f6fb0;
+  border-color: rgba(47, 111, 176, 0.22);
+}
+
+.badge--mode-companion {
+  background: rgba(124, 92, 191, 0.1);
+  color: #6b4f9e;
+  border-color: rgba(124, 92, 191, 0.22);
+}
+
+.badge--mode-custom {
+  background: rgba(15, 143, 134, 0.08);
+  color: var(--accent-dim);
+  border-color: rgba(15, 143, 134, 0.2);
+}
+
+.badge--settle-knowledge {
+  background: rgba(47, 111, 176, 0.1);
+  color: #2f6fb0;
+  border-color: rgba(47, 111, 176, 0.22);
+}
+
+.badge--settle-persona {
+  background: rgba(124, 92, 191, 0.1);
+  color: #6b4f9e;
+  border-color: rgba(124, 92, 191, 0.22);
 }
 
 .card {
@@ -1913,6 +1956,37 @@ button.nav-link:disabled {
 
 .memory-group__label {
   font-weight: 650;
+}
+
+.chat__main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat__main--closed .chat__messages,
+.chat__main--closed .chat__composer {
+  filter: blur(1.5px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.chat__closed {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  pointer-events: none;
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  text-shadow: 0 1px 12px rgba(247, 248, 250, 0.9);
 }
 
 .chat__messages {
@@ -3347,6 +3421,138 @@ tbody tr:hover {
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.settle-modal {
+  max-width: 560px;
+}
+
+.settle-body {
+  display: grid;
+  gap: 16px;
+}
+
+.settle-lead {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.settle-pick__head,
+.settle-result__head {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+
+.settle-list {
+  display: grid;
+  gap: 8px;
+}
+
+.settle-row {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: start;
+  gap: 10px;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 36, 56, 0.1);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.settle-row:hover:not(:disabled) {
+  border-color: rgba(13, 148, 136, 0.35);
+}
+
+.settle-row--on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.settle-row:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.settle-row__tick {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: 5px;
+  border: 1.5px solid rgba(15, 36, 56, 0.22);
+  display: grid;
+  place-items: center;
+  color: var(--accent-dim);
+}
+
+.settle-row--on .settle-row__tick {
+  border-color: var(--accent);
+  background: #fff;
+}
+
+.settle-row__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settle-row__title {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.settle-row__mark {
+  font-size: 11px;
+  color: var(--accent-dim);
+  font-weight: 650;
+}
+
+.settle-row__reason {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.settle-result {
+  display: grid;
+  gap: 8px;
+}
+
+.settle-result__card {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 36, 56, 0.08);
+}
+
+.settle-result__card--ok {
+  background: var(--accent-soft);
+}
+
+.settle-result__card--skip {
+  background: #f6f8f9;
+}
+
+.settle-result__card--err {
+  background: #fff7ed;
+}
+
+.settle-result__title {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.settle-result__detail {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
 }
 
 .close-btn {

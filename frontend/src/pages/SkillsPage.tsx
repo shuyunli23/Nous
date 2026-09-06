@@ -682,10 +682,16 @@ export default function SkillsPage() {
           />
           <button
             type="submit"
-            className="btn btn--sm"
+            className="btn btn--icon"
             disabled={probing || !probeQuery.trim()}
+            aria-label={probing ? t('skills.probing') : t('skills.probe')}
+            title={probing ? t('skills.probing') : t('skills.probe')}
           >
-            {probing ? t('skills.probing') : t('skills.probe')}
+            {probing ? (
+              <span className="spinner" aria-hidden="true" />
+            ) : (
+              <FlaskMark />
+            )}
           </button>
         </form>
 
@@ -834,29 +840,45 @@ export default function SkillsPage() {
                       <div className="table__actions">
                         <button
                           type="button"
-                          className="btn btn--sm"
+                          className="btn btn--icon"
                           disabled={busyId === skill.id}
                           onClick={() => void toggleStatus(skill)}
+                          aria-label={
+                            skill.status === 'active'
+                              ? t('common.disable')
+                              : t('common.enable')
+                          }
+                          title={
+                            skill.status === 'active'
+                              ? t('common.disable')
+                              : t('common.enable')
+                          }
                         >
-                          {skill.status === 'active'
-                            ? t('common.disable')
-                            : t('common.enable')}
+                          {skill.status === 'active' ? (
+                            <PauseMark />
+                          ) : (
+                            <PlayMark />
+                          )}
                         </button>
                         <button
                           type="button"
-                          className="btn btn--sm"
+                          className="btn btn--icon"
                           disabled={busyId === skill.id}
                           onClick={() => void openEditor(skill.id)}
+                          aria-label={t('common.edit')}
+                          title={t('common.edit')}
                         >
-                          {t('common.edit')}
+                          <EditMark />
                         </button>
                         <button
                           type="button"
-                          className="btn btn--sm btn--danger"
+                          className="btn btn--icon btn--danger"
                           disabled={busyId === skill.id}
                           onClick={() => void handleDelete(skill)}
+                          aria-label={t('common.delete')}
+                          title={t('common.delete')}
                         >
-                          {t('common.delete')}
+                          <TrashMark />
                         </button>
                       </div>
                     </td>
@@ -904,5 +926,66 @@ export default function SkillsPage() {
         onSave={handleSave}
       />
     </div>
+  );
+}
+
+function iconProps() {
+  return {
+    width: 16,
+    height: 16,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2.15,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true as const,
+  };
+}
+
+function FlaskMark() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M9.5 2h5" />
+      <path d="M10 2v6.4L4.6 18.2A2.2 2.2 0 0 0 6.5 21.4h11a2.2 2.2 0 0 0 1.9-3.2L14 8.4V2" />
+      <path d="M8.2 14.6h7.6" />
+    </svg>
+  );
+}
+
+function PlayMark() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M8.6 6.3v11.4L18.5 12Z" />
+    </svg>
+  );
+}
+
+function PauseMark() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+      <rect fill="currentColor" x="8" y="6.2" width="2.8" height="11.6" rx="0.8" />
+      <rect fill="currentColor" x="13.2" y="6.2" width="2.8" height="11.6" rx="0.8" />
+    </svg>
+  );
+}
+
+function EditMark() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M12.4 20.2H20" />
+      <path d="M16.2 4.6a2 2 0 0 1 2.8 2.8L8 18.4l-3.4.8.8-3.4Z" />
+    </svg>
+  );
+}
+
+function TrashMark() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M9.4 5.4c0-1 .8-1.8 1.8-1.8h1.6c1 0 1.8.8 1.8 1.8" />
+      <path d="M5 7.4h14" />
+      <path d="M7.3 7.4v10.1c0 1.2.9 2.1 2.1 2.1h5.2c1.2 0 2.1-.9 2.1-2.1V7.4" />
+      <path d="M10 11.3v5M12 11.3v5M14 11.3v5" />
+    </svg>
   );
 }
