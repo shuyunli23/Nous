@@ -7,7 +7,9 @@ import time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.execution_trace import tool_step
+from app.agent.context_guard import note_call
+from app.agent.context_spill import maybe_spill
+from app.agent.execution_trace import guard_step, tool_step
 from app.agent.progress import emit
 from app.agent.state import AgentState
 from app.agent.tools import execute_tool
@@ -21,7 +23,10 @@ async def tool_executor_node(state: AgentState, *, session: AsyncSession) -> Age
     tool_calls: list[dict] = state.get("tool_calls") or []
     messages: list[Message] = list(state.get("messages") or [])
     user_id = state.get("user_id")
+    todos = list(state.get("todos") or [])
     trace = list(state.get("execution_trace") or [])
+    chain = dict(state.get("repeat_chain") or {})
+    conversation_id = state.get("conversation_id")
 
     for tc in tool_calls:
         fn = tc.get("function", {}) or {}
@@ -49,6 +54,12 @@ async def tool_executor_node(state: AgentState, *, session: AsyncSession) -> Age
         from app.agent.artifacts import attach_inspect
 
         result = attach_inspect(result)
+        result = maybe_spill(
+            result, tool=name, conversation_id=conversation_id
+        )
+        if name == "todo_write" and result.get("ok") and isinstance(result.get("todos"), list):
+            todos = list(result["todos"])
+        chain, reminder = note_call(chain, name=name, raw_args=raw_args)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         step = tool_step(
             name=name,
@@ -78,11 +89,16 @@ async def tool_executor_node(state: AgentState, *, session: AsyncSession) -> Age
             "content": json.dumps(result, ensure_ascii=False, default=str),
         }
         messages.append(result_msg)
+        if reminder:
+            messages.append({"role": "user", "content": reminder})
+            trace.append(guard_step(reminder))
 
     return {
         **state,
         "messages": messages,
         "tool_calls": [],
+        "todos": todos,
+        "repeat_chain": chain,
         "tool_loop_count": (state.get("tool_loop_count") or 0) + 1,
         "execution_trace": trace,
     }

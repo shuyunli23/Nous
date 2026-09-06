@@ -7,6 +7,7 @@ from typing import Any
 from app.agent.goal import format_success_criteria
 from app.agent.skill_gate import is_recall_query, is_retry_or_continue
 from app.agent.state import AgentState
+from app.agent.todo import TODO_GUIDANCE, format_todos_for_prompt
 from app.chat_modes.catalog import TOOL_FULL, WORKBENCH, resolve_system_prompt
 from app.llm.client import Message
 
@@ -30,6 +31,10 @@ async def compose_prompt_node(state: AgentState) -> AgentState:
         )
         if criteria:
             system_prompt = f"{system_prompt}\n\n{criteria}"
+        system_prompt = f"{system_prompt}\n\n{TODO_GUIDANCE}"
+        standing = format_todos_for_prompt(list(state.get("todos") or []))
+        if standing:
+            system_prompt = f"{system_prompt}\n\n{standing}"
 
     query = state.get("query") or ""
     if is_recall_query(query) or is_retry_or_continue(query):

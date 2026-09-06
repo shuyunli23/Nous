@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Boolean, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import Base, created_at_column, updated_at_column, uuid_pk
+from app.database.base import (
+    Base,
+    JSONType,
+    created_at_column,
+    updated_at_column,
+    uuid_pk,
+)
 from app.database.models.enums import ConversationStatus, ExtractionStatus
 
 if TYPE_CHECKING:
@@ -46,6 +52,11 @@ class Conversation(Base):
 
     mode_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("chat_modes.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Last todo_write snapshot for this conversation (Harness standing plan).
+    todos: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONType, nullable=True
     )
 
     created_time: Mapped[datetime] = created_at_column()

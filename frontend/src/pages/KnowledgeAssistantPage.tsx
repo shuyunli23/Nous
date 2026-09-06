@@ -52,6 +52,7 @@ export default function KnowledgeAssistantPage() {
     const nextTurns: Turn[] = [...turns, { role: 'user', content: message }];
     setTurns(nextTurns);
     setBusy(true);
+    let lastSteps: ExecutionStep[] = [];
     try {
       const history = nextTurns
         .slice(0, -1)
@@ -60,9 +61,8 @@ export default function KnowledgeAssistantPage() {
         if (event.type === 'token' && event.text) {
           setDraftReply((prev) => prev + event.text);
         }
-        setLiveSteps((prev) =>
-          applyLiveTrace(prev, event as ChatStreamEvent),
-        );
+        lastSteps = applyLiveTrace(lastSteps, event as ChatStreamEvent);
+        setLiveSteps(lastSteps);
       });
       setTurns([
         ...nextTurns,
@@ -76,8 +76,19 @@ export default function KnowledgeAssistantPage() {
         },
       ]);
     } catch (err: unknown) {
-      setError(err instanceof ApiError ? err.message : t('km.askFailed'));
-      setTurns(nextTurns);
+      const reason =
+        err instanceof ApiError ? err.message : t('km.askFailed');
+      setError(reason);
+      setTurns([
+        ...nextTurns,
+        {
+          role: 'assistant',
+          content: reason,
+          execution_trace: lastSteps.map((step) =>
+            step.status === 'running' ? { ...step, status: 'error' } : step,
+          ),
+        },
+      ]);
     } finally {
       setBusy(false);
       setDraftReply('');

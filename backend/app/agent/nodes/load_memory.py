@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.agent.state import AgentState
 from app.core.logging import get_logger
 from app.memory.conversation_memory import load_history
+from app.repositories.conversation_repo import ConversationRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
@@ -12,6 +13,17 @@ logger = get_logger(__name__)
 
 async def load_memory_node(state: AgentState, *, session: AsyncSession) -> AgentState:
     conversation_id = state["conversation_id"]
-    history = await load_history(session, conversation_id)
-    logger.debug("memory_loaded", conversation_id=conversation_id, turns=len(history))
-    return {**state, "history": history}
+    conversation = await ConversationRepository(session).get(conversation_id)
+    todos = list(conversation.todos or []) if conversation else []
+    history = await load_history(
+        session,
+        conversation_id,
+        existing_summary=conversation.summary if conversation else None,
+    )
+    logger.debug(
+        "memory_loaded",
+        conversation_id=conversation_id,
+        turns=len(history),
+        todos=len(todos),
+    )
+    return {**state, "history": history, "todos": todos}

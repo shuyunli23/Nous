@@ -28,6 +28,7 @@ class ChatService:
         self.conv_svc = ConversationService(session)
         self.repo = ConversationRepository(session)
         self.modes = ChatModeService(session)
+        self.active_conversation_id: str | None = None
 
     async def chat(
         self,
@@ -59,6 +60,7 @@ class ChatService:
             )
 
         cid = conversation.id
+        self.active_conversation_id = cid
         logger.info("chat_start", conversation_id=cid, user_id=user_id)
         from app.agent.progress import emit
         from app.llm.usage import PURPOSE_CHAT, usage_scope

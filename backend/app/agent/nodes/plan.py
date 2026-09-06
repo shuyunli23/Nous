@@ -10,6 +10,7 @@ from app.agent.goal import (
     wants_document_photo,
 )
 from app.agent.state import AgentState
+from app.agent.todo import wants_structured_plan
 from app.chat_modes.catalog import TOOL_FULL
 from app.core.logging import get_logger
 
@@ -32,6 +33,7 @@ async def plan_node(state: AgentState) -> AgentState:
         }
     required = infer_required_tools(goal)
     must_embed = wants_document_photo(goal)
+    todos = list(state.get("todos") or [])
     trace = list(state.get("execution_trace") or [])
     if required:
         plan = describe_plan(goal, required)
@@ -41,9 +43,13 @@ async def plan_node(state: AgentState) -> AgentState:
             required_tools=required,
             must_embed_image=must_embed,
         )
+    elif todos:
+        plan = describe_plan(goal, [])
+    elif wants_structured_plan(goal, required):
+        plan = f"{describe_plan(goal, required)} · 先用 todo_write 列出步骤"
     else:
         plan = "无需调用工具，直接作答"
-    trace.append(plan_step(plan, required))
+    trace.append(plan_step(plan, required, todos=todos))
     return {
         **state,
         "goal_text": goal,

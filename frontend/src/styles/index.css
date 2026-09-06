@@ -2574,6 +2574,38 @@ button.nav-link:disabled {
   word-break: break-word;
 }
 
+.exec__todos {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exec__todo {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.exec__todo-mark {
+  width: 12px;
+  flex: 0 0 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.exec__todo--completed {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.exec__todo--in_progress {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .exec__cot {
   margin-top: 6px;
   max-height: 280px;

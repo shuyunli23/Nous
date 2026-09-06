@@ -87,21 +87,28 @@ async def chat_stream(
                 payload["type"] = "done"
                 await queue.put(payload)
             except AppError as exc:
+                details = dict(exc.details or {})
+                if svc.active_conversation_id:
+                    details.setdefault("conversation_id", svc.active_conversation_id)
                 await queue.put(
                     {
                         "type": "error",
                         "code": exc.code,
                         "message": exc.message,
-                        "details": exc.details,
+                        "details": details,
                     }
                 )
             except Exception as exc:
                 logger.exception("chat_stream_failed", error=str(exc))
+                details = {}
+                if svc.active_conversation_id:
+                    details["conversation_id"] = svc.active_conversation_id
                 await queue.put(
                     {
                         "type": "error",
                         "code": "internal_error",
                         "message": "Unexpected server error.",
+                        "details": details or None,
                     }
                 )
             finally:

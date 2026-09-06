@@ -81,6 +81,21 @@ class Settings(BaseSettings):
     agent_max_tool_loops: int = 12
     agent_max_verify_retries: int = 2
 
+    # --- Context governance (Harness guard + spill + compaction) ---
+    # Repeat-tool reminder: advisory only, never blocks a call.
+    guard_repeat_enabled: bool = True
+    guard_repeat_thresholds: str = "3,5,8"
+    guard_repeat_exclude: str = "todo_write"
+    guard_repeat_preview_chars: int = 500
+    # Spill oversized tool JSON to disk; 0 disables.
+    spill_max_inline_bytes: int = 8192
+    spill_dir: str = "./data/spills"
+    # Model-free prune of tool/assistant blobs in loaded history.
+    compact_tool_threshold_chars: int = 4096
+    compact_tool_head_chars: int = 2048
+    compact_tool_tail_chars: int = 512
+    compact_checkpoint_enabled: bool = True
+
     # --- Skill packs (nous-pack/2) ---
     skill_packs_dir: str = "./data/skill_packs"
     skill_pack_max_zip_bytes: int = 20 * 1024 * 1024

@@ -616,6 +616,23 @@ async def generate_image(
 # ── crop_image ─────────────────────────────────────────────────────────────
 
 
+# ── todo_write ─────────────────────────────────────────────────────────────
+
+
+async def todo_write(
+    *,
+    todos: list[dict[str, Any]] | str | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Replace the conversation's standing todo list (Harness todo_write)."""
+    from app.agent.todo import apply_todo_write
+
+    payload = todos
+    if payload is None:
+        payload = extra.get("items") or extra.get("list") or extra.get("tasks")
+    return apply_todo_write(payload)
+
+
 # ── run_command ────────────────────────────────────────────────────────────
 
 

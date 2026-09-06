@@ -21,14 +21,20 @@ from __future__ import annotations
 import functools
 import time
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, StateGraph
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.core.exceptions import AppError
+from app.core.logging import get_logger
 
 from app.agent.nodes.compose_prompt import compose_prompt_node
 from app.agent.nodes.llm_call import llm_call_node, should_call_tools
 from app.agent.nodes.load_memory import load_memory_node
-from app.agent.nodes.persist import persist_node
+from app.agent.nodes.persist import persist_failed_turn, persist_node
 from app.agent.nodes.plan import plan_node
 from app.agent.nodes.retrieve_skills import retrieve_skills_node
 from app.agent.nodes.tool_executor import tool_executor_node
@@ -37,6 +43,34 @@ from app.agent.progress import emit_node_end, emit_node_start, stamp_node_trace
 from app.agent.state import AgentState
 
 NodeFn = Callable[..., Awaitable[AgentState]]
+
+logger = get_logger(__name__)
+
+_last_state: ContextVar[AgentState | None] = ContextVar(
+    "agent_last_state", default=None
+)
+
+
+def remember_state(state: AgentState | None) -> None:
+    _last_state.set(state)
+
+
+def take_last_state() -> AgentState | None:
+    return _last_state.get()
+
+
+def graph_recursion_limit() -> int:
+    """LangGraph hops allowed for one turn.
+
+    Default is 25. A tool-heavy turn is startup (~5 hops) plus two hops
+    per tool batch (llm_call → tool_executor), plus verify/persist and
+    optional verify retries. Size the ceiling from the same knobs that
+    already cap the loop so a 12-loop brief cannot die as an opaque
+    ``GraphRecursionError``.
+    """
+    loops = max(1, settings.agent_max_tool_loops)
+    retries = max(0, settings.agent_max_verify_retries)
+    return max(60, 8 + 3 * (loops + retries + 2))
 
 
 def _track(name: str, fn: NodeFn) -> NodeFn:
@@ -49,6 +83,7 @@ def _track(name: str, fn: NodeFn) -> NodeFn:
         try:
             result = await fn(state)
         except Exception:
+            remember_state(state)
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             emit_node_end(
                 name,
@@ -67,6 +102,7 @@ def _track(name: str, fn: NodeFn) -> NodeFn:
             state=result,
         )
         updated = {**result, "execution_trace": trace}
+        remember_state(updated)
         emit_node_end(
             name, elapsed_ms=elapsed_ms, execution_trace=trace, state=updated
         )
@@ -156,5 +192,43 @@ async def run_agent(
         "knowledge_block": knowledge_block,
         "mode_system_prompt": mode_system_prompt,
     }
-    final: AgentState = await app.ainvoke(initial)
-    return final
+    remember_state(initial)
+    try:
+        try:
+            final: AgentState = await app.ainvoke(
+                initial,
+                config={"recursion_limit": graph_recursion_limit()},
+            )
+        except Exception as exc:
+            snapshot = take_last_state() or initial
+            mapped = _map_run_error(exc, conversation_id)
+            if not isinstance(exc, AppError | GraphRecursionError):
+                logger.exception("agent_run_failed", error=str(exc))
+            await persist_failed_turn(
+                snapshot,
+                session=session,
+                reason=mapped.message,
+            )
+            raise mapped from exc
+        return final
+    finally:
+        remember_state(None)
+
+
+def _map_run_error(exc: Exception, conversation_id: str) -> AppError:
+    details: dict = {"conversation_id": conversation_id}
+    if isinstance(exc, GraphRecursionError):
+        details["recursion_limit"] = graph_recursion_limit()
+        return AppError(
+            "This turn used too many graph steps before finishing. "
+            "Split the task, or raise AGENT_MAX_TOOL_LOOPS and retry.",
+            details=details,
+        )
+    if isinstance(exc, AppError):
+        merged = {**exc.details, **details}
+        exc.details = merged
+        return exc
+    return AppError(
+        "This turn stopped before a reply was finished.",
+        details=details,
+    )

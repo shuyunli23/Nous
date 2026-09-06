@@ -10,6 +10,7 @@ import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.context_compact import apply_window, prune_text
 from app.agent.goal import ATTACH_START
 from app.core.config import settings
 from app.database.models.enums import MessageRole
@@ -30,6 +31,14 @@ def compact_history_text(role: str, content: str) -> str:
     text = _DATA_URL.sub("[图片]", text)
     text = _MD_IMAGE.sub("[图片]", text)
     text = _HTML_IMG.sub("[图片]", text)
+    if role == "tool":
+        pruned, _ = prune_text(
+            text,
+            threshold=settings.compact_tool_threshold_chars,
+            head=settings.compact_tool_head_chars,
+            tail=settings.compact_tool_tail_chars,
+        )
+        return pruned
     if role != "user" and len(text) > _MAX_ASSISTANT_CHARS:
         text = text[: _MAX_ASSISTANT_CHARS - 12].rstrip() + "\n…(已省略)"
     return text
@@ -41,11 +50,13 @@ async def load_history(
     *,
     max_turns: int | None = None,
     max_chars: int | None = None,
+    existing_summary: str | None = None,
 ) -> list[Message]:
     """Return recent messages as LLM-compatible dicts, oldest first.
 
     Only user / assistant / tool roles are returned; system messages are
-    injected separately by the prompt builder.
+    injected separately by the prompt builder. Older turns that fall out of
+    the budget become a ``<compacted-summary>`` checkpoint.
     """
     _max_turns = max_turns or settings.memory_max_turns
     _max_chars = max_chars or settings.memory_max_chars
@@ -70,25 +81,11 @@ async def load_history(
             msg["tool_call_id"] = row.tool_call_id
         messages.append(msg)
 
-    trimmed: list[Message] = []
-    total = 0
-    for msg in reversed(messages):
-        size = len(msg.get("content") or "")
-        role = msg.get("role")
-        over = total + size > _max_chars and trimmed
-        if over and role == "user":
-            # User turns are short after compacting; keep them so follow-ups
-            # like「再试试」still see the original request.
-            if size > 400:
-                msg = {**msg, "content": (msg.get("content") or "")[:400]}
-                size = len(msg["content"])
-            if total + size > _max_chars * 2:
-                break
-        elif over:
-            break
-        trimmed.insert(0, msg)
-        total += size
-        if len(trimmed) >= _max_turns:
-            break
-
+    trimmed, _checkpoint = apply_window(
+        messages,
+        max_chars=_max_chars,
+        max_turns=_max_turns,
+        existing_summary=existing_summary,
+        checkpoint=bool(settings.compact_checkpoint_enabled),
+    )
     return trimmed

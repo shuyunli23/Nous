@@ -29,6 +29,7 @@ async def create_tables() -> None:
         await conn.run_sync(_ensure_knowledge_memory_column)
         await conn.run_sync(_ensure_structured_memory_columns)
         await conn.run_sync(_ensure_conversation_title_auto)
+        await conn.run_sync(_ensure_conversation_todos_column)
     logger.info("database_tables_ready", tables=len(Base.metadata.tables))
 
 
@@ -193,6 +194,24 @@ def _ensure_conversation_title_auto(sync_conn) -> None:
             "ALTER TABLE conversations ADD COLUMN title_auto "
             "BOOLEAN NOT NULL DEFAULT TRUE"
         )
+    sync_conn.execute(text(stmt))
+    logger.info("schema_column_added", sql=stmt)
+
+
+def _ensure_conversation_todos_column(sync_conn) -> None:
+    """Add conversations.todos for the session-owned todo_write list."""
+    insp = inspect(sync_conn)
+    if "conversations" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("conversations")}
+    if "todos" in cols:
+        return
+    dialect = sync_conn.dialect.name
+    stmt = (
+        "ALTER TABLE conversations ADD COLUMN todos JSON"
+        if dialect == "sqlite"
+        else "ALTER TABLE conversations ADD COLUMN todos JSONB"
+    )
     sync_conn.execute(text(stmt))
     logger.info("schema_column_added", sql=stmt)
 

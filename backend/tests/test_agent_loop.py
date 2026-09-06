@@ -434,6 +434,101 @@ def test_retry_reuses_last_actionable_user_turn() -> None:
     ]
 
 
+def test_failed_turn_keeps_question_and_trace() -> None:
+    from app.agent.nodes.persist import FAILED_KEEP_NOTE, failed_turn_content, finalize_failed_trace
+
+    state = {
+        "query": "做一套 AGI 一周简报",
+        "response": "已写完 notes.md",
+        "execution_trace": [
+            {"kind": "tool", "title": "todo_write", "status": "ok"},
+            {"kind": "think", "title": "模型推理", "status": "running"},
+        ],
+    }
+    reason = "This turn used too many graph steps before finishing."
+    text = failed_turn_content(state, reason)
+    assert "已写完 notes.md" in text
+    assert reason in text
+    assert FAILED_KEEP_NOTE in text
+    trace = finalize_failed_trace(state["execution_trace"], reason)
+    assert trace[0]["status"] == "ok"
+    assert trace[1]["status"] == "error"
+    assert any(step.get("title") == "本轮中断" for step in trace)
+
+
+def test_run_agent_persists_partial_turn_on_recursion() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from langgraph.errors import GraphRecursionError
+
+    from app.agent.graph import remember_state, run_agent
+    from app.core.exceptions import AppError
+
+    captured: dict = {}
+
+    class FakeApp:
+        async def ainvoke(self, initial, config=None):
+            remember_state(
+                {
+                    **initial,
+                    "todos": [{"content": "搜索", "status": "completed"}],
+                    "execution_trace": [
+                        {"kind": "tool", "title": "todo_write", "status": "ok"},
+                    ],
+                }
+            )
+            raise GraphRecursionError("limit")
+
+    async def fake_persist(state, *, session, reason):
+        captured["query"] = state["query"]
+        captured["reason"] = reason
+        captured["todos"] = state.get("todos")
+        captured["trace"] = state.get("execution_trace")
+        return {**state, "assistant_message_id": "kept"}
+
+    async def _run() -> None:
+        from app.agent import graph as graph_mod
+
+        original_build = graph_mod.build_graph
+        original_persist = graph_mod.persist_failed_turn
+        graph_mod.build_graph = lambda session: FakeApp()  # type: ignore[assignment]
+        graph_mod.persist_failed_turn = fake_persist  # type: ignore[assignment]
+        try:
+            try:
+                await run_agent(
+                    session=AsyncMock(),
+                    user_id="u",
+                    conversation_id="c",
+                    query="做一套 AGI 一周简报",
+                )
+            except AppError as exc:
+                assert "graph steps" in exc.message
+                assert exc.details.get("conversation_id") == "c"
+            else:
+                raise AssertionError("expected AppError")
+        finally:
+            graph_mod.build_graph = original_build
+            graph_mod.persist_failed_turn = original_persist
+
+    asyncio.run(_run())
+    assert captured["query"] == "做一套 AGI 一周简报"
+    assert captured["todos"]
+    assert captured["trace"]
+
+
+def test_graph_recursion_limit_covers_a_full_tool_loop() -> None:
+    from app.agent.graph import graph_recursion_limit
+    from app.core.config import settings
+
+    limit = graph_recursion_limit()
+    # Default LangGraph cap is 25; a 12-loop brief is ~5 startup + 2 hops
+    # per batch + verify/persist and must not die as GraphRecursionError.
+    hops_needed = 8 + 2 * (settings.agent_max_tool_loops + settings.agent_max_verify_retries)
+    assert limit >= 60
+    assert limit >= hops_needed
+
+
 def test_history_compaction_keeps_user_intent() -> None:
     from app.memory.conversation_memory import compact_history_text
 

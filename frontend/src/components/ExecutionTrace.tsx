@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { ExecutionStep } from '../api/types';
+import type { ExecutionStep, TodoItem } from '../api/types';
 import { useI18n } from '../i18n';
 
 interface ExecutionTraceProps {
@@ -21,6 +21,29 @@ export function formatElapsedMs(ms: number): string {
   const sec = Math.max(0, ms) / 1000;
   if (sec < 10) return `${sec.toFixed(1)}s`;
   return `${String(Math.round(sec))}s`;
+}
+
+function TodoList({ items }: { items: TodoItem[] }) {
+  return (
+    <ul className="exec__todos">
+      {items.map((item, index) => {
+        const status = item.status || 'pending';
+        const mark =
+          status === 'completed' ? '✓' : status === 'in_progress' ? '›' : '·';
+        return (
+          <li
+            key={`${status}-${item.content}-${index}`}
+            className={`exec__todo exec__todo--${status}`}
+          >
+            <span className="exec__todo-mark" aria-hidden="true">
+              {mark}
+            </span>
+            <span>{item.content}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 function previewLine(text: string): string {
@@ -114,6 +137,7 @@ export default function ExecutionTrace({
       return t('exec.retrieve');
     }
     if (step.kind === 'plan') return t('exec.plan');
+    if (step.kind === 'guard') return t('exec.guard');
     if (step.kind === 'think') return t('exec.think');
     if (step.kind === 'tool') return t('exec.tool');
     if (step.kind === 'verify') return t('exec.verify');
@@ -180,6 +204,8 @@ export default function ExecutionTrace({
                   </div>
                   {hasModelOutput ? (
                     <CotBody text={step.detail || ''} streaming={streaming} />
+                  ) : step.todos && step.todos.length > 0 ? (
+                    <TodoList items={step.todos} />
                   ) : step.detail ? (
                     <div className="exec__detail">{step.detail}</div>
                   ) : null}

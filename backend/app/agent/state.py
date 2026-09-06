@@ -34,6 +34,7 @@ class AgentState(TypedDict, total=False):
     required_tools: list[str]
     goal_text: str
     must_embed_image: bool
+    todos: list[dict[str, str]]
     error: str | None
     mode_key: str
     tool_policy: str
@@ -42,6 +43,9 @@ class AgentState(TypedDict, total=False):
     persona_block: str
     knowledge_block: str
     mode_system_prompt: str
+
+    # Repeat-tool guard chain (in-turn, not persisted).
+    repeat_chain: dict[str, Any]
 
     # Compact steps for the chat UI (skills / tools / answer)
     execution_trace: list[dict[str, Any]]

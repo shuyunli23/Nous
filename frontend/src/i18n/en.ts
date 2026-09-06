@@ -123,6 +123,7 @@ export const en: Messages = {
     newTitle: 'New chat',
     loadFailed: 'Failed to load conversation.',
     sendFailed: 'Send failed. Please try again.',
+    turnKept: 'Your question and the steps so far are kept. Continue in this chat.',
     llmHint: ' (check LLM_API_KEY in backend/.env)',
     closedExtracting:
       'Chat closed. Skill extraction is running in the background. Check the Skills page shortly.',
@@ -260,6 +261,8 @@ export const en: Messages = {
     skill: 'Skill',
     retrieve: 'Retrieve',
     plan: 'Plan',
+    todo: 'Todos',
+    guard: 'Guard',
     think: 'Think',
     tool: 'Tool',
     verify: 'Verify',

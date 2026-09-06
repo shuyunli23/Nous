@@ -583,6 +583,42 @@ _TOOLS: dict[str, dict[str, Any]] = {
         },
         "handler": builtins.run_command,
     },
+    "todo_write": {
+        "description": (
+            "Replace this conversation's standing task list. Send the ENTIRE "
+            "list every call — there are no partial updates. Use for multi-step "
+            "work (3+ steps, shell/git/build, research then an artifact). "
+            "Each item is `{content, status}` with status pending | in_progress "
+            "| completed. Exactly one item may be in_progress. "
+            "Do not use this for a one-shot question. "
+            "If the user started a new task, replace the leftover list."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "todos": {
+                    "type": "array",
+                    "description": "The complete replacement list.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "One concrete next action (short).",
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["pending", "in_progress", "completed"],
+                            },
+                        },
+                        "required": ["content", "status"],
+                    },
+                },
+            },
+            "required": ["todos"],
+        },
+        "handler": builtins.todo_write,
+    },
 }
 
 def _shell_gate() -> bool:

@@ -35,6 +35,11 @@ export interface TokenUsage {
   total_tokens?: number;
 }
 
+export interface TodoItem {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed' | string;
+}
+
 export interface ExecutionStep {
   kind: 'skill_retrieve' | 'plan' | 'tool' | 'verify' | 'answer' | 'think' | string;
   title: string;
@@ -45,6 +50,8 @@ export interface ExecutionStep {
   args?: Record<string, string>;
   count?: number;
   elapsed_ms?: number;
+  /** Standing plan from todo_write / the plan node. */
+  todos?: TodoItem[];
   /** Frontend-only: when the running step started (Date.now()). */
   started_at?: number;
 }

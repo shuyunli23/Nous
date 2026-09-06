@@ -36,8 +36,8 @@ Nous 会在会话结束后判断这段对话是否包含可复用的经验，如
 
 | 特性 | 说明 |
 | --- | --- |
-| **Nous Agent** | LangGraph：记忆 → 检索 Skill → 组装提示 → 调用模型（可循环工具）→ 持久化 |
-| **内置工具** | 网页搜索、抓取页面、查天气、生成 PPT / 网页 Demo、计算器、当前时间、命令执行（沙箱，需显式开启） |
+| **Nous Agent** | LangGraph：记忆 → 检索 Skill → 组装提示 → 调用模型（可循环工具）→ 持久化；长会话有重复调用提醒、超长工具结果落盘、历史压缩 |
+| **内置工具** | 网页搜索、抓取页面、查天气、生成 PPT / 网页 Demo、计算器、当前时间、命令执行（沙箱，需显式开启）、`todo_write` 任务清单 |
 | **会话预览** | 工具产出的 HTML 网页和 SVG 图在对话里直接预览，可切换源码 |
 | **Skill 包导入** | 一键导入内置能力包，或粘贴 JSON（Claude / WorkBuddy 风格 playbook） |
 | **插件** | 稳定 `nous-plugin/1`；zip / GitHub 导入；兼容 nous-pack/2 与 DeepSeek Harness（`dsh`）仓库 |
@@ -381,6 +381,10 @@ CORS_ORIGINS=http://localhost:3000
 | `MEMORY_MAX_TURNS` | `12` | 带入上下文的最大轮数 |
 | `MEMORY_MAX_CHARS` | `8000` | 上下文字符上限 |
 | `AGENT_MAX_TOOL_LOOPS` | `4` | 工具调用循环上限，防止死循环 |
+| `GUARD_REPEAT_ENABLED` | `true` | 连续相同工具调用达到阈值时注入提醒（不拦截） |
+| `GUARD_REPEAT_THRESHOLDS` | `3,5,8` | 第 3 次短提醒，之后点名工具和参数 |
+| `SPILL_MAX_INLINE_BYTES` | `8192` | 工具 JSON 超过此字节则落盘，模型只看预览；`0` 关闭 |
+| `COMPACT_CHECKPOINT_ENABLED` | `true` | 历史超出预算时，被丢掉的前缀压成 `<compacted-summary>` |
 
 ### 命令执行工具（沙箱）
 
@@ -471,8 +475,10 @@ load_memory → retrieve_skills → compose_prompt → llm_call
 | `retrieve_skills` | 混合检索相关 Skill，并写入使用台账 |
 | `compose_prompt` | 把 Skill 的步骤和指令编排进系统提示 |
 | `llm_call` | 调用模型；请求工具调用时走条件边循环 |
-| `tool_executor` | 执行内置工具（搜索、天气、PPT、网页 Demo、计算器、命令执行等） |
+| `tool_executor` | 执行内置工具（搜索、天气、PPT、网页 Demo、计算器、命令执行、`todo_write` 等） |
 | `persist` | 落库消息、token 用量、以及本次用到的 Skill ID（审计轨迹） |
+
+**`todo_write`（规划清单）** 移植自 DeepSeek Harness：整表替换本会话任务清单（`pending` / `in_progress` / `completed`）。每次必须提交完整列表，同时只能有一项进行中。清单挂在会话上、跨轮次保留，执行过程里会画出勾选条。简单问答不要用。
 
 ### Skill 提取链
 
@@ -641,6 +647,8 @@ python -m tests.smoke_phase3      # Skill 提取与管理（mock 掉 LLM）
 python -m tests.smoke_phase4      # 嵌入、向量库、混合检索
 python -m tests.smoke_llm_config  # 运行时模型配置（含 Bedrock 报文转换）
 python -m tests.test_shell_tool   # 命令执行工具：隔离策略 + 本机真实执行
+python -m tests.test_todo         # todo_write 校验与提示注入
+python -m tests.test_context_governance  # 重复调用提醒 / 工具结果落盘 / 历史压缩
 python -m tests.check_migration   # 校验 Alembic 迁移与 ORM 模型一致
 ```
 

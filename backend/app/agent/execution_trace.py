@@ -107,6 +107,15 @@ def _result_summary(name: str, result: dict[str, Any]) -> tuple[str, str]:
     if name == "calculator":
         return "ok", _truncate(str(result.get("result") or result.get("value") or "完成"), 80)
 
+    if name == "todo_write":
+        counts = result.get("counts") or {}
+        detail = result.get("message") or (
+            f"{counts.get('pending', 0)} pending · "
+            f"{counts.get('inProgress', 0)} in progress · "
+            f"{counts.get('completed', 0)} completed"
+        )
+        return "ok", _truncate(str(detail), 180)
+
     if name == "current_datetime":
         return "ok", _truncate(str(result.get("iso") or result.get("datetime") or "完成"), 80)
 
@@ -149,7 +158,7 @@ def tool_step(
     args = _parse_args(raw_args)
     status, detail = _result_summary(name, result if isinstance(result, dict) else {})
     preview = _arg_preview(name, args)
-    return {
+    step = {
         "kind": "tool",
         "title": name,
         "detail": " · ".join(p for p in (preview, detail) if p),
@@ -158,15 +167,34 @@ def tool_step(
         "call_id": call_id or None,
         "args": {k: _truncate(str(v), 120) for k, v in list(args.items())[:6]},
     }
+    if name == "todo_write" and isinstance(result.get("todos"), list):
+        step["todos"] = result["todos"]
+    return step
 
 
-def plan_step(plan: str, required_tools: list[str]) -> dict[str, Any]:
-    return {
+def plan_step(
+    plan: str,
+    required_tools: list[str],
+    todos: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    step: dict[str, Any] = {
         "kind": "plan",
         "title": "计划",
         "detail": _truncate(plan, 180),
         "status": "info",
         "required_tools": required_tools,
+    }
+    if todos:
+        step["todos"] = todos
+    return step
+
+
+def guard_step(detail: str) -> dict[str, Any]:
+    return {
+        "kind": "guard",
+        "title": "循环提醒",
+        "detail": _truncate(detail, 180),
+        "status": "info",
     }
 
 
@@ -176,6 +204,15 @@ def verify_step(*, ok: bool, detail: str) -> dict[str, Any]:
         "title": "核对" if ok else "核对未通过",
         "detail": _truncate(detail, 180),
         "status": "ok" if ok else "error",
+    }
+
+
+def interrupt_step(detail: str) -> dict[str, Any]:
+    return {
+        "kind": "verify",
+        "title": "本轮中断",
+        "detail": _truncate(detail, 180),
+        "status": "error",
     }
 
 

@@ -41,6 +41,32 @@ function optimisticContent(text: string, files?: File[]) {
   return text ? `${text}\n\n📎 ${names}` : `📎 ${names}`;
 }
 
+function freezeLiveSteps(steps: ExecutionStep[]): ExecutionStep[] {
+  return steps.map((step) =>
+    step.status === 'running' ? { ...step, status: 'error' } : step,
+  );
+}
+
+function failedAssistantMessage(
+  text: string,
+  steps: ExecutionStep[],
+): Message {
+  return {
+    id: `temp-err-${Date.now()}`,
+    seq: 0,
+    role: 'assistant',
+    content: text,
+    execution_trace: steps.length ? steps : null,
+    created_at: new Date().toISOString(),
+  };
+}
+
+function conversationIdFromUnknown(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  const raw = err.details?.conversation_id;
+  return typeof raw === 'string' && raw.trim() ? raw : null;
+}
+
 function readStoredModeId(): string | null {
   try {
     return localStorage.getItem(MODE_STORAGE);
@@ -309,6 +335,9 @@ export default function ChatPage() {
       };
       setMessages((prev) => [...prev, optimistic]);
 
+      let activeId = conversationId;
+      let lastSteps: ExecutionStep[] = [];
+
       try {
         const response = await sendMessageStream(
           text,
@@ -316,7 +345,15 @@ export default function ChatPage() {
           files,
           (event) => {
             if (event.type === 'start' && event.conversation_id) {
+              activeId = event.conversation_id;
               setConversationId(event.conversation_id);
+            }
+            if (event.type === 'error') {
+              const fromError = event.details?.conversation_id;
+              if (typeof fromError === 'string' && fromError.trim()) {
+                activeId = fromError;
+                setConversationId(fromError);
+              }
             }
             if (event.type === 'token' && event.text) {
               setDraftReply((prev) => prev + event.text);
@@ -324,7 +361,8 @@ export default function ChatPage() {
             if (event.type === 'token_clear') {
               setDraftReply('');
             }
-            setLiveSteps((prev) => applyLiveTrace(prev, event));
+            lastSteps = applyLiveTrace(lastSteps, event);
+            setLiveSteps(lastSteps);
           },
           conversationId ? null : selectedModeId,
           providerId || null,
@@ -363,15 +401,55 @@ export default function ChatPage() {
           navigate(`/chat/${response.conversation_id}`, { replace: true });
         }
       } catch (err: unknown) {
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
-        if (err instanceof ApiError) {
-          setError(
-            err.code === 'llm_error'
+        const fromError = conversationIdFromUnknown(err);
+        if (fromError) activeId = fromError;
+        const reason =
+          err instanceof ApiError
+            ? err.code === 'llm_error'
               ? `${err.message}${t('chat.llmHint')}`
-              : err.message,
-          );
+              : err.message
+            : t('chat.sendFailed');
+        const banner = `${reason} ${t('chat.turnKept')}`;
+        const failed = failedAssistantMessage(
+          `${reason}\n\n${t('chat.turnKept')}`,
+          freezeLiveSteps(lastSteps),
+        );
+        setError(banner);
+        if (activeId) {
+          setConversationId(activeId);
+          try {
+            const detail = await getConversation(activeId);
+            setTitle((prev) => detail.title || prev);
+            setStatus(detail.status);
+            setMessages((prev) => {
+              const hasQuery = detail.messages.some(
+                (row) =>
+                  row.role === 'user' && row.content === optimistic.content,
+              );
+              if (hasQuery) return detail.messages;
+              const kept = prev.some((row) => row.id === tempId)
+                ? prev
+                : [...prev, optimistic];
+              return [...kept, failed];
+            });
+            if (!routeId) {
+              navigate(`/chat/${activeId}`, { replace: true });
+            }
+          } catch {
+            setMessages((prev) => {
+              const kept = prev.some((row) => row.id === tempId)
+                ? prev
+                : [...prev, optimistic];
+              return [...kept, failed];
+            });
+          }
         } else {
-          setError(t('chat.sendFailed'));
+          setMessages((prev) => {
+            const kept = prev.some((row) => row.id === tempId)
+              ? prev
+              : [...prev, optimistic];
+            return [...kept, failed];
+          });
         }
       } finally {
         setPending(false);
