@@ -252,3 +252,56 @@ def test_stream_break_with_no_output_ends_as_llm_error(monkeypatch) -> None:
     assert isinstance(raised, LLMError)
     assert "Response ended prematurely" in str(raised)
     assert "代理" in (raised.details or {}).get("hint", "")
+
+
+def test_dangling_tool_use_is_dropped_before_bedrock() -> None:
+    # A salvaged/interrupted turn persists an assistant toolUse that never ran,
+    # then compaction can drop a result while keeping its caller. Either way
+    # Bedrock rejects the whole conversation unless we pair them up first.
+    from app.llm.bedrock import drop_unpaired_tool_calls, to_converse_messages
+
+    messages = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "on it",
+            "tool_calls": [
+                {"id": "keep1", "function": {"name": "create_webpage", "arguments": "{}"}},
+                {"id": "orphan", "function": {"name": "search", "arguments": "{}"}},
+            ],
+        },
+        {"role": "tool", "tool_call_id": "keep1", "content": "ok"},
+        # No result for "orphan" -> the stream broke before it executed.
+        {"role": "user", "content": "continue"},
+        # An orphan result whose caller was trimmed away entirely.
+        {"role": "tool", "tool_call_id": "vanished", "content": "stale"},
+    ]
+
+    cleaned = drop_unpaired_tool_calls(messages)
+    kept_calls = [
+        c["id"]
+        for m in cleaned
+        if m.get("role") == "assistant"
+        for c in (m.get("tool_calls") or [])
+    ]
+    assert kept_calls == ["keep1"]
+    assert not any(
+        m.get("role") == "tool" and m.get("tool_call_id") == "vanished" for m in cleaned
+    )
+
+    # And the converted Bedrock payload has exactly one toolUse and one toolResult.
+    _system, converse = to_converse_messages(messages)
+    use_ids = [
+        b["toolUse"]["toolUseId"]
+        for m in converse
+        for b in m["content"]
+        if "toolUse" in b
+    ]
+    result_ids = [
+        b["toolResult"]["toolUseId"]
+        for m in converse
+        for b in m["content"]
+        if "toolResult" in b
+    ]
+    assert use_ids == ["keep1"]
+    assert result_ids == ["keep1"]

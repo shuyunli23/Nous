@@ -212,6 +212,55 @@ def _tool_use_blocks(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return blocks
 
 
+def _tool_call_id(call: dict[str, Any]) -> str:
+    """The id a tool_call will carry as its toolUseId (must match _tool_use_blocks)."""
+    fn = call.get("function") or {}
+    return str(call.get("id") or fn.get("name") or "tool")
+
+
+def drop_unpaired_tool_calls(messages: list[Message]) -> list[Message]:
+    """Remove tool_use / tool_result blocks that have no partner.
+
+    Bedrock rejects the whole conversation ("tool_use ids were found without
+    tool_result blocks immediately after") if any toolUse lacks its toolResult,
+    or vice versa. Three things produce an unpaired block, and every one of them
+    gets *persisted*, so a single bad turn poisons every later turn until this
+    runs: a salvaged/interrupted stream saves an assistant toolUse that was
+    never executed; context-window compaction can trim a tool result while
+    keeping the assistant turn that called it; and a crash between the two
+    writes leaves the pair half-saved. Match by id in both directions and drop
+    whatever is left dangling -- the model simply re-asks for the tool.
+    """
+    result_ids = {
+        str(m.get("tool_call_id") or "tool")
+        for m in messages
+        if m.get("role") == "tool"
+    }
+    declared_ids: set[str] = set()
+    cleaned: list[Message] = []
+    for msg in messages:
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            kept = [c for c in msg["tool_calls"] if _tool_call_id(c) in result_ids]
+            declared_ids.update(_tool_call_id(c) for c in kept)
+            new_msg = dict(msg)
+            if kept:
+                new_msg["tool_calls"] = kept
+            else:
+                # No surviving call and no text either -> an empty assistant turn
+                # that to_converse_messages would drop anyway; let it fall through.
+                new_msg.pop("tool_calls", None)
+            cleaned.append(new_msg)
+        else:
+            cleaned.append(msg)
+    # Second pass: a tool result whose caller was itself dropped is now an orphan.
+    return [
+        m
+        for m in cleaned
+        if m.get("role") != "tool"
+        or str(m.get("tool_call_id") or "tool") in declared_ids
+    ]
+
+
 def to_converse_messages(
     messages: list[Message],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -220,6 +269,7 @@ def to_converse_messages(
     Converse requires alternating user/assistant turns starting with the user,
     so consecutive same-role messages are merged.
     """
+    messages = drop_unpaired_tool_calls(messages)
     system: list[dict[str, Any]] = []
     converted: list[dict[str, Any]] = []
 
