@@ -30,7 +30,7 @@ from app.services.conversation_service import ConversationService
 
 logger = get_logger(__name__)
 
-SETTLE_KINDS: tuple[SettleKind, ...] = ("skill", "knowledge", "persona")
+SETTLE_KINDS: tuple[SettleKind, ...] = ("skill", "knowledge", "persona", "pack")
 
 _CONFIDENCE_TAIL = re.compile(r"\s*\(confidence=\d+(?:\.\d+)?\)\s*$", re.I)
 
@@ -64,7 +64,7 @@ def step_title(base: str, row: SettleKindResult) -> str:
 
 
 class _SettleLLMItem(BaseModel):
-    kind: Literal["skill", "knowledge", "persona"]
+    kind: Literal["skill", "knowledge", "persona", "pack"]
     recommended: bool = False
     confidence: float = 0.0
     reason: str = ""
@@ -125,6 +125,12 @@ def fallback_items(mode_key: str | None) -> list[SettleProposalItem]:
             recommended=key == COMPANION,
             confidence=0.35 if key == COMPANION else 0.15,
             reason="分析失败，按陪伴习惯提示偏好。仍可改选。",
+        ),
+        SettleProposalItem(
+            kind="pack",
+            recommended=False,
+            confidence=0.1,
+            reason="分析失败，默认不固化为工具。若对话产出了可运行代码可自行勾选。",
         ),
     ]
 
@@ -246,12 +252,23 @@ def _knowledge_detail(notes: Any) -> str:
     return " ".join(parts) or "知识沉淀完成。"
 
 
+def _pack_detail(result: Any) -> str:
+    if not result.reusable:
+        return result.reason or "这次没有可固化成工具的可运行代码。"
+    if result.activated:
+        return f"已固化为工具并激活（{result.tool_count} 个工具），下一轮对话即可调用。"
+    if result.created:
+        return result.reason or "已装成待审（工具未启用）。"
+    return result.reason or "没有生成工具。"
+
+
 async def _run_kind(
     session: AsyncSession,
     *,
     conversation_id: str,
     user_id: str,
     kind: SettleKind,
+    grant_permissions: list[str] | None = None,
 ) -> SettleKindResult:
     if kind == "skill":
         from app.services.skill_service import SkillService
@@ -284,6 +301,28 @@ async def _run_kind(
             notes_skipped=notes.skipped,
             memory_updated=notes.memory_updated,
             detail=_knowledge_detail(notes),
+        )
+
+    if kind == "pack":
+        from app.skill.pack_author import author_pack_from_conversation
+
+        pack = await author_pack_from_conversation(
+            session,
+            conversation_id,
+            user_id=user_id,
+            granted_permissions=grant_permissions,
+        )
+        return SettleKindResult(
+            kind="pack",
+            ok=pack.created,
+            skipped=not pack.created,
+            reason=pack.reason or None,
+            pack_id=pack.pack_id,
+            pack_row_id=pack.pack_row_id,
+            pack_status=pack.status,
+            tool_count=pack.tool_count,
+            validated=pack.validated,
+            detail=_pack_detail(pack),
         )
 
     from app.services.memory_service import UserMemoryService
@@ -325,6 +364,7 @@ async def run_settle_events(
     *,
     user_id: str,
     kinds: list[str],
+    grant_permissions: list[str] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     selected = _validate_kinds(kinds)
     conv_svc = ConversationService(session)
@@ -334,6 +374,7 @@ async def run_settle_events(
         "skill": "抽取 Skill",
         "knowledge": "沉淀知识",
         "persona": "记下偏好",
+        "pack": "固化为工具",
     }
     trace: list[dict[str, Any]] = []
     results: list[SettleKindResult] = []
@@ -354,6 +395,7 @@ async def run_settle_events(
                 conversation_id=conversation_id,
                 user_id=user_id,
                 kind=kind,
+                grant_permissions=grant_permissions,
             )
             status = step_status(row)
             title = step_title(title, row)

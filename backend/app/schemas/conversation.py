@@ -94,7 +94,7 @@ class ConversationCaptureResult(BaseModel):
     detail: str | None = None
 
 
-SettleKind = Literal["skill", "knowledge", "persona"]
+SettleKind = Literal["skill", "knowledge", "persona", "pack"]
 
 
 class SettleProposalItem(BaseModel):
@@ -126,6 +126,12 @@ class SettleKindResult(BaseModel):
     memory_updated: bool = False
     error: str | None = None
     detail: str | None = None
+    # pack sedimentation
+    pack_id: str | None = None
+    pack_row_id: str | None = None
+    pack_status: str | None = None  # active | pending_review
+    tool_count: int = 0
+    validated: bool = False  # smoke test passed
 
 
 class SettleRunResult(BaseModel):
@@ -135,4 +141,7 @@ class SettleRunResult(BaseModel):
 
 class SettleRunRequest(BaseModel):
     kinds: list[str] = Field(default_factory=list)
+    # Permissions the user granted for the "pack" kind (e.g. ["script.python",
+    # "network"]). Consumed only when "pack" is selected; ignored otherwise.
+    grant_permissions: list[str] | None = None
 

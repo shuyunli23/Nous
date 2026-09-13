@@ -19,16 +19,18 @@ const KIND_LABEL: Record<SettleKind, MessageKey> = {
   skill: 'settle.kindSkill',
   knowledge: 'settle.kindKnowledge',
   persona: 'settle.kindPersona',
+  pack: 'settle.kindPack',
 };
 
 const KIND_HINT: Record<SettleKind, MessageKey> = {
   skill: 'settle.hintSkill',
   knowledge: 'settle.hintKnowledge',
   persona: 'settle.hintPersona',
+  pack: 'settle.hintPack',
 };
 
 function emptySelection(): Record<SettleKind, boolean> {
-  return { skill: false, knowledge: false, persona: false };
+  return { skill: false, knowledge: false, persona: false, pack: false };
 }
 
 function resultTone(row: SettleRunResult['results'][number]): 'ok' | 'skip' | 'err' {
@@ -73,6 +75,8 @@ export default function SettleDialog({
   );
   const [proposal, setProposal] = useState<SettleProposal | null>(null);
   const [selected, setSelected] = useState(emptySelection);
+  const [grantPython, setGrantPython] = useState(true);
+  const [grantNetwork, setGrantNetwork] = useState(false);
   const [analyzeSteps, setAnalyzeSteps] = useState<ExecutionStep[]>([]);
   const [runSteps, setRunSteps] = useState<ExecutionStep[]>([]);
   const [runResult, setRunResult] = useState<SettleRunResult | null>(null);
@@ -87,6 +91,8 @@ export default function SettleDialog({
     setProposal(null);
     setError(null);
     setSelected(emptySelection());
+    setGrantPython(true);
+    setGrantNetwork(false);
     setRunSteps([]);
     setRunResult(null);
     setAnalyzeSteps([
@@ -110,6 +116,7 @@ export default function SettleDialog({
           persona: Boolean(
             next.items.find((item) => item.kind === 'persona')?.recommended,
           ),
+          pack: Boolean(next.items.find((item) => item.kind === 'pack')?.recommended),
         });
         const suggested = next.items
           .filter((item) => item.recommended)
@@ -180,10 +187,21 @@ export default function SettleDialog({
     setPhase('run');
     setRunSteps([]);
     setRunResult(null);
+    const grants = selected.pack
+      ? [
+          ...(grantPython ? ['script.python'] : []),
+          ...(grantNetwork ? ['network'] : []),
+        ]
+      : undefined;
     try {
-      const next = await runSettleStream(conversationId, picked, (event) => {
-        setRunSteps((prev) => applySettleTrace(prev, event));
-      });
+      const next = await runSettleStream(
+        conversationId,
+        picked,
+        (event) => {
+          setRunSteps((prev) => applySettleTrace(prev, event));
+        },
+        grants,
+      );
       setRunResult(next);
       setPhase('done');
       onDone?.(next);
@@ -293,6 +311,33 @@ export default function SettleDialog({
                   );
                 })}
               </div>
+              {selected.pack ? (
+                <div className="settle-grant">
+                  <div className="settle-grant__head">{t('settle.packGrantTitle')}</div>
+                  <p className="settle-grant__lead">{t('settle.packGrantLead')}</p>
+                  <label className="settle-grant__row">
+                    <input
+                      type="checkbox"
+                      checked={grantPython}
+                      disabled={!canPick}
+                      onChange={(e) => setGrantPython(e.target.checked)}
+                    />
+                    <span>{t('settle.packGrantPython')}</span>
+                  </label>
+                  <label className="settle-grant__row">
+                    <input
+                      type="checkbox"
+                      checked={grantNetwork}
+                      disabled={!canPick}
+                      onChange={(e) => setGrantNetwork(e.target.checked)}
+                    />
+                    <span>{t('settle.packGrantNetwork')}</span>
+                  </label>
+                  {!grantPython ? (
+                    <p className="settle-grant__warn">{t('settle.packGrantPending')}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

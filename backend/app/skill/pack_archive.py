@@ -112,6 +112,25 @@ def _find_pack_root(extracted: Path) -> Path:
     return extracted
 
 
+def zip_directory(root: Path) -> bytes:
+    """Zip a materialised pack directory into archive bytes.
+
+    The inverse of :func:`extract_pack_zip`: used by the pack author to hand a
+    freshly generated tree to ``PackService.import_bytes`` without touching the
+    filesystem twice. Paths are stored relative to ``root`` with forward
+    slashes so the archive round-trips through the zip-slip guard on extract.
+    """
+    root = root.resolve()
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(root.rglob("*")):
+            if path.is_dir():
+                continue
+            arcname = path.relative_to(root).as_posix()
+            zf.write(path, arcname)
+    return buf.getvalue()
+
+
 def install_tree(src_root: Path, dest_root: Path) -> None:
     """Copy a validated pack tree into the durable install location."""
     if dest_root.exists():

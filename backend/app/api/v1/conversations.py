@@ -312,6 +312,7 @@ async def run_conversation_settle(
                 conversation_id,
                 user_id=user.id,
                 kinds=payload.kinds,
+                grant_permissions=payload.grant_permissions,
             ):
                 yield f"data: {json.dumps(item, ensure_ascii=False, default=str)}\n\n"
         except AppError as exc:

@@ -140,6 +140,7 @@ export async function runSettleStream(
   id: string,
   kinds: SettleKind[],
   onEvent: (event: SettleStreamEvent) => void,
+  grantPermissions?: string[],
 ): Promise<SettleRunResult> {
   let response: Response;
   try {
@@ -150,7 +151,10 @@ export async function runSettleStream(
         'Content-Type': 'application/json',
         'X-User-Id': USER_ID,
       },
-      body: JSON.stringify({ kinds }),
+      body: JSON.stringify({
+        kinds,
+        grant_permissions: grantPermissions ?? null,
+      }),
     });
   } catch (cause) {
     throw new ApiError(

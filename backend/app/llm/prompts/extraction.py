@@ -107,3 +107,53 @@ def format_conversation(messages: list[dict]) -> str:
     if len(text) > _TOTAL_CHARS:
         text = text[:_TOTAL_CHARS].rstrip() + "\n…[对话过长，已截断]"
     return text
+
+
+# Code sedimentation needs the actual source, so this keeps fenced code blocks
+# intact (only capping runaway length) instead of the SVG/HTML stripping the
+# advice-skill path does -- an authored pack script is only as good as the code
+# it was distilled from.
+_CODE_FENCE = re.compile(r"```[\s\S]*?```")
+_KEEP_CODE_PER_MESSAGE = 12_000
+_KEEP_CODE_TOTAL = 48_000
+
+
+def format_conversation_keep_code(messages: list[dict]) -> str:
+    """Like format_conversation but preserves code blocks verbatim.
+
+    Used only by the pack author: it must see the real script, not a
+    ``[HTML 页已省略]`` placeholder. Non-code prose outside fences is still
+    compacted so huge SVG/HTML dumps that are *not* the reusable code do not
+    blow the budget.
+    """
+    lines: list[str] = []
+    role_map = {"user": "用户", "assistant": "Agent", "system": "系统", "tool": "工具"}
+    for m in messages:
+        role = role_map.get(m.get("role", ""), m.get("role", ""))
+        raw = (m.get("content") or "").strip()
+        if not raw:
+            continue
+        fences = list(_CODE_FENCE.finditer(raw))
+        if fences:
+            parts: list[str] = []
+            cursor = 0
+            for fence in fences:
+                prose = raw[cursor : fence.start()]
+                if prose.strip():
+                    parts.append(compact_extraction_text(prose))
+                parts.append(fence.group(0))  # code kept verbatim
+                cursor = fence.end()
+            tail = raw[cursor:]
+            if tail.strip():
+                parts.append(compact_extraction_text(tail))
+            content = "".join(parts)
+            if len(content) > _KEEP_CODE_PER_MESSAGE:
+                content = content[:_KEEP_CODE_PER_MESSAGE].rstrip() + "\n…[截断]"
+        else:
+            content = compact_extraction_text(raw)
+        if content:
+            lines.append(f"【{role}】{content}")
+    text = "\n\n".join(lines)
+    if len(text) > _KEEP_CODE_TOTAL:
+        text = text[:_KEEP_CODE_TOTAL].rstrip() + "\n…[对话过长，已截断]"
+    return text

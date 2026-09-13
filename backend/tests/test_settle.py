@@ -26,11 +26,12 @@ def test_normalize_fills_missing_kinds() -> None:
             {"kind": "other", "recommended": True, "reason": "ignore"},
         ]
     )
-    assert [item.kind for item in items] == ["skill", "knowledge", "persona"]
+    assert [item.kind for item in items] == ["skill", "knowledge", "persona", "pack"]
     assert items[0].recommended is True
     assert items[0].reason == "有可复用步骤"
     assert items[1].recommended is False
     assert items[2].recommended is False
+    assert items[3].recommended is False
 
 
 def test_fallback_uses_mode_only_as_hint() -> None:

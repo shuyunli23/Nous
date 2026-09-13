@@ -125,7 +125,7 @@ export interface ConversationCaptureResult {
   detail?: string | null;
 }
 
-export type SettleKind = 'skill' | 'knowledge' | 'persona';
+export type SettleKind = 'skill' | 'knowledge' | 'persona' | 'pack';
 
 export interface SettleProposalItem {
   kind: SettleKind;
@@ -156,6 +156,11 @@ export interface SettleKindResult {
   memory_updated: boolean;
   error?: string | null;
   detail?: string | null;
+  pack_id?: string | null;
+  pack_row_id?: string | null;
+  pack_status?: string | null;
+  tool_count?: number;
+  validated?: boolean;
 }
 
 export interface SettleRunResult {
