@@ -6,6 +6,7 @@ from app.agent.todo import (
     TODO_GUIDANCE,
     apply_todo_write,
     format_todos_for_prompt,
+    unfinished_todos,
     validate_todos,
     wants_structured_plan,
 )
@@ -36,6 +37,17 @@ def test_rejects_extra_keys_and_two_in_progress() -> None:
         ]
     )
     assert err and "at most one" in err
+
+
+def test_unfinished_todos_skips_completed() -> None:
+    leftover = unfinished_todos(
+        [
+            {"content": "搜资料", "status": "completed"},
+            {"content": "写脚本", "status": "in_progress"},
+            {"content": "做汇报页", "status": "pending"},
+        ]
+    )
+    assert leftover == ["写脚本", "做汇报页"]
 
 
 def test_apply_returns_harness_shaped_ack() -> None:

@@ -11,6 +11,7 @@ from app.agent.goal import (
     infer_required_tools,
 )
 from app.agent.nodes.llm_call import should_call_tools
+from app.core.config import settings
 from app.agent.nodes.verify import should_continue_after_verify
 from app.agent.tools.export_urls import (
     rewrite_invented_export_links,
@@ -56,6 +57,61 @@ def test_evaluate_turn_missing_webpage_is_incomplete() -> None:
     assert verdict.missing_tools == ["create_webpage"]
     assert any("DNPR_Demo_fake.html" in url for url in verdict.invented_urls)
     assert "MUST call" in verdict.critique()
+
+
+def test_evaluate_turn_open_todos_is_incomplete() -> None:
+    verdict = evaluate_turn(
+        required_tools=[],
+        response="先跑脚本。",
+        trace=[],
+        exports_dir=Path("/tmp/nous-missing-exports"),
+        todos=[
+            {"content": "编写并运行 stats.py", "status": "in_progress"},
+            {"content": "制作网页汇报", "status": "pending"},
+        ],
+    )
+    assert not verdict.complete
+    # The webpage item names a tool that never ran, so it blocks the turn.
+    assert verdict.open_todos == ["制作网页汇报"]
+    # Prose work no artifact can prove only earns a reminder.
+    assert verdict.unverifiable_todos == ["编写并运行 stats.py"]
+    critique = verdict.critique()
+    assert "todo list is not finished" in critique
+    assert "stats.py" in critique
+
+
+def test_prose_only_todos_do_not_block_the_turn() -> None:
+    """A checklist of un-inferable items must not deadlock verify."""
+    verdict = evaluate_turn(
+        required_tools=[],
+        response="已经整理好提纲了。",
+        trace=[],
+        exports_dir=Path("/tmp/nous-missing-exports"),
+        todos=[{"content": "整理提纲", "status": "pending"}],
+    )
+    assert verdict.complete
+    assert verdict.open_todos == []
+    assert verdict.unverifiable_todos == ["整理提纲"]
+
+
+def test_artifact_settles_a_forgotten_checklist_item() -> None:
+    """Model built the page but forgot the closing todo_write."""
+    from app.agent.goal import settle_todos
+
+    trace = [{"kind": "tool", "tool": "create_webpage", "status": "ok"}]
+    todos = [{"content": "制作网页汇报", "status": "in_progress"}]
+    settled = settle_todos(todos, trace)
+    assert settled == [{"content": "制作网页汇报", "status": "completed"}]
+    verdict = evaluate_turn(
+        required_tools=["create_webpage"],
+        response="页面好了。",
+        trace=trace,
+        exports_dir=Path("/tmp/nous-missing-exports"),
+        todos=settled,
+    )
+    assert verdict.complete
+    # The original list is left untouched for the caller to swap in.
+    assert todos[0]["status"] == "in_progress"
 
 
 def test_evaluate_turn_succeeds_after_tool() -> None:
@@ -421,6 +477,43 @@ def test_skill_gate_skips_chitchat_and_recap() -> None:
     assert should_retrieve_skills("查一下北京天气") is True
 
 
+def test_should_call_tools_does_not_drop_in_flight_call_at_cap() -> None:
+    from app.agent.state import TOOL_LOOP_GRACE
+
+    cap = settings.agent_max_tool_loops
+    state = {
+        "tool_policy": "full",
+        "tool_calls": [
+            {"function": {"name": "run_command", "arguments": "{}"}},
+        ],
+        "tool_loop_count": cap,
+    }
+    assert should_call_tools(state) == "tools"
+    state["tool_loop_count"] = cap + TOOL_LOOP_GRACE
+    assert should_call_tools(state) == "verify"
+
+
+def test_checklist_only_rounds_have_their_own_budget() -> None:
+    """todo_write spends no work loop, so it needs a separate bound."""
+    from app.agent.state import TODO_ONLY_LOOP_BUDGET
+
+    state = {
+        "tool_policy": "full",
+        "tool_calls": [{"function": {"name": "todo_write", "arguments": "{}"}}],
+        "tool_loop_count": 0,
+        "todo_loop_count": TODO_ONLY_LOOP_BUDGET - 1,
+    }
+    assert should_call_tools(state) == "tools"
+    state["todo_loop_count"] = TODO_ONLY_LOOP_BUDGET
+    assert should_call_tools(state) == "verify"
+    # A round that also does real work still uses the work cap, not this one.
+    state["tool_calls"] = [
+        {"function": {"name": "todo_write", "arguments": "{}"}},
+        {"function": {"name": "run_command", "arguments": "{}"}},
+    ]
+    assert should_call_tools(state) == "tools"
+
+
 def test_retry_reuses_last_actionable_user_turn() -> None:
     from app.agent.goal import resolve_goal_text
 
@@ -540,6 +633,52 @@ def test_history_compaction_keeps_user_intent() -> None:
     assert "[图片]" in compact
     user = compact_history_text("user", "生成一张美女的图像")
     assert user == "生成一张美女的图像"
+
+
+def test_db_lock_error_is_named_and_actionable() -> None:
+    """A locked SQLite file must not surface as the opaque generic message."""
+    from sqlalchemy.exc import OperationalError
+
+    from app.agent.graph import _map_run_error
+
+    exc = OperationalError("INSERT INTO messages", {}, Exception("database is locked"))
+    mapped = _map_run_error(exc, "conv-1")
+    assert "database was locked" in mapped.message
+    assert mapped.details["exception"] == "OperationalError"
+
+    other = RuntimeError("boom")
+    generic = _map_run_error(other, "conv-1")
+    assert "stopped before a reply" in generic.message
+    # Whatever it was, the type is recorded so the stored turn is diagnosable.
+    assert generic.details["exception"] == "RuntimeError"
+    assert generic.details["exception_message"] == "boom"
+
+
+def test_interrupted_stream_is_not_a_finished_turn() -> None:
+    """A salvaged half-reply reads fine, so only finish_reason can catch it."""
+    verdict = evaluate_turn(
+        required_tools=[],
+        response="AGI 指的是通用人工智能，它",
+        trace=[],
+        exports_dir=Path("/tmp/nous-missing-exports"),
+        finish_reason="interrupted",
+    )
+    assert verdict.truncated
+    assert not verdict.complete
+    critique = verdict.critique()
+    assert "cut off mid-stream" in critique
+    assert "do not repeat what you already wrote" in critique
+
+    # A normal finish with the same (short) answer stays complete.
+    ok = evaluate_turn(
+        required_tools=[],
+        response="AGI 指的是通用人工智能，它",
+        trace=[],
+        exports_dir=Path("/tmp/nous-missing-exports"),
+        finish_reason="stop",
+    )
+    assert not ok.truncated
+    assert ok.complete
 
 
 if __name__ == "__main__":

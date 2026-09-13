@@ -1,4 +1,4 @@
-﻿"""Runtime LLM provider store.
+"""Runtime LLM provider store.
 
 Lets the UI switch model providers without editing ``.env`` and restarting.
 Providers live in a JSON file under ``backend/data/`` (gitignored) so a chosen
@@ -22,6 +22,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.core.logging import get_logger
+from app.llm.token_limits import effective_max_tokens
 from app.llm.providers import (
     IMAGE_CAPABLE_KINDS,
     IMAGE_ONLY_KINDS,
@@ -363,7 +364,9 @@ def env_resolved() -> ResolvedLLM:
         base_url=settings.llm_base_url.rstrip("/"),
         api_key=settings.llm_api_key or None,
         temperature=settings.llm_temperature,
-        max_tokens=settings.llm_max_tokens,
+        max_tokens=effective_max_tokens(
+            "openai_compatible", settings.llm_model, settings.llm_max_tokens
+        ),
         timeout_seconds=settings.llm_timeout_seconds,
         max_retries=settings.llm_max_retries,
     )
@@ -390,7 +393,9 @@ def resolve_from_record(record: ProviderRecord) -> ResolvedLLM:
             if record.temperature is not None
             else settings.llm_temperature
         ),
-        max_tokens=record.max_tokens or settings.llm_max_tokens,
+        max_tokens=effective_max_tokens(
+            record.kind, record.model, record.max_tokens
+        ),
         timeout_seconds=settings.llm_timeout_seconds,
         max_retries=settings.llm_max_retries,
     )

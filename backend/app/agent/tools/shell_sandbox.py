@@ -264,14 +264,56 @@ def _wrap_with_sandbox(
 # ── Shell selection + environment ──────────────────────────────────────────
 
 
+# PowerShell 5 `>` / Out-File defaults to UTF-16 LE (BOM ff fe). Python then
+# dies with "Non-UTF-8 code starting with '\\xff'". Force utf8 for redirects.
+_PS_UTF8_PREAMBLE = (
+    "$PSDefaultParameterValues['Out-File:Encoding']='utf8';"
+    "$PSDefaultParameterValues['Set-Content:Encoding']='utf8';"
+    "$PSDefaultParameterValues['Add-Content:Encoding']='utf8';"
+    "$OutputEncoding = [Console]::OutputEncoding = "
+    "New-Object System.Text.UTF8Encoding $false; "
+)
+
+# No cmd.exe equivalent of the preamble exists: cmd parses the whole `/c` line
+# in the codepage active at launch (936/GBK on a Chinese Windows), so a leading
+# `chcp 65001` runs too late -- literals are already down-converted and `echo
+# 中文 > f.txt` still lands as GBK. Hence pwsh 7 is preferred for chains below,
+# and cmd stays a last resort that build_shell_argv cannot make UTF-8 safe.
+
+
+def has_bash_chain(command: str) -> bool:
+    """True if `&&` / `||` appears outside quotes (a real shell operator).
+
+    Substring matching would send ``python -c "print('a && b')"`` to cmd.exe
+    for no reason, so track quote state and only count bare operators.
+    """
+    quote = ""
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif command[index:index + 2] in {"&&", "||"}:
+            return True
+        index += 1
+    return False
+
+
 def build_shell_argv(command: str) -> tuple[list[str], str]:
     """Platform shell invocation. Stateless: one process per call."""
     if os.name == "nt":
-        pwsh = shutil.which("pwsh") or shutil.which("powershell")
-        if pwsh:
+        pwsh7 = shutil.which("pwsh")
+        pwsh = pwsh7 or shutil.which("powershell")
+        # PowerShell 5 rejects bash `&&` / `||` (the screenshot hang). pwsh 7
+        # added them, so it can keep the UTF-8 preamble; only a box with just
+        # PowerShell 5 has to fall back to cmd, encoding warts and all.
+        if pwsh and (pwsh7 or not has_bash_chain(command)):
             return (
                 [pwsh, "-NoProfile", "-NonInteractive", "-NoLogo",
-                 "-Command", command],
+                 "-Command", _PS_UTF8_PREAMBLE + command],
                 Path(pwsh).stem.lower(),
             )
         return (["cmd.exe", "/d", "/s", "/c", command], "cmd")
@@ -288,6 +330,7 @@ def _scrub_env(*, network: bool, workspace: Path, workdir: Path) -> dict[str, st
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "LC_ALL": os.environ.get("LC_ALL", ""),
         "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
         "HOME": str(workspace),
         "USERPROFILE": str(workspace),

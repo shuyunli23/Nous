@@ -394,6 +394,7 @@ export interface ProviderView {
   aws_session_token?: string | null;
   temperature?: number | null;
   max_tokens?: number | null;
+  output_token_cap?: number;
   created_at: string;
   updated_at: string;
   is_active: boolean;
@@ -411,6 +412,7 @@ export interface ActiveLLMView {
   configured: boolean;
   temperature: number;
   max_tokens: number;
+  output_token_cap?: number;
 }
 
 export interface EnvDefaultsView {
@@ -419,6 +421,7 @@ export interface EnvDefaultsView {
   has_api_key: boolean;
   temperature: number;
   max_tokens: number;
+  output_token_cap?: number;
 }
 
 export interface PresetView {

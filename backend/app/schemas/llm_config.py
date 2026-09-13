@@ -93,6 +93,7 @@ class ProviderView(BaseModel):
 
     temperature: float | None = None
     max_tokens: int | None = None
+    output_token_cap: int = 8192
 
     created_at: datetime
     updated_at: datetime
@@ -114,6 +115,7 @@ class ActiveLLMView(BaseModel):
     configured: bool
     temperature: float
     max_tokens: int
+    output_token_cap: int = 8192
 
 
 class EnvDefaultsView(BaseModel):
@@ -124,6 +126,7 @@ class EnvDefaultsView(BaseModel):
     has_api_key: bool
     temperature: float
     max_tokens: int
+    output_token_cap: int = 8192
 
 
 class PresetView(BaseModel):

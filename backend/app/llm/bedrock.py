@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.core.exceptions import LLMError
 from app.core.logging import get_logger
+from app.llm.token_limits import clamp_request_max_tokens
 
 if TYPE_CHECKING:
     from app.llm.client import CompletionResult, Message
@@ -79,8 +80,25 @@ def _build_client(cfg: ResolvedLLM) -> Any:
         session_kwargs["profile_name"] = cfg.aws_profile_name
 
     try:
+        from botocore.config import Config  # noqa: PLC0415  (lazy, like boto3)
+
         session = boto3.Session(**session_kwargs)
-        return session.client("bedrock-runtime")
+        return session.client(
+            "bedrock-runtime",
+            # botocore defaults to a 60s read timeout, which a thinking model can
+            # exceed between two stream events -- and no TCP keepalive, so an idle
+            # connection is fair game for any middlebox. Both showed up as
+            # ``ProtocolError: Response ended prematurely`` mid-stream. The knobs
+            # reuse the provider's own timeout/retry settings rather than adding
+            # new ones. Note these retries cannot cover a break that happens
+            # *during* streaming -- bedrock_chat_complete_stream handles that.
+            config=Config(
+                read_timeout=cfg.timeout_seconds,
+                connect_timeout=cfg.timeout_seconds,
+                tcp_keepalive=True,
+                retries={"max_attempts": cfg.max_retries + 1, "mode": "standard"},
+            ),
+        )
     except Exception as exc:  # botocore raises many distinct credential errors
         raise LLMError(
             f"Could not initialise AWS Bedrock client: {exc}",
@@ -335,7 +353,9 @@ def _build_kwargs(
         "messages": converse_messages,
         "inferenceConfig": {
             "temperature": temperature if temperature is not None else cfg.temperature,
-            "maxTokens": max_tokens or cfg.max_tokens,
+            "maxTokens": clamp_request_max_tokens(
+                cfg.kind, model or cfg.model, max_tokens, cfg.max_tokens
+            ),
         },
     }
     if system:
@@ -345,6 +365,29 @@ def _build_kwargs(
         if tool_config["tools"]:
             kwargs["toolConfig"] = tool_config
     return kwargs
+
+
+# Failures worth retrying rather than surfacing. The second group is connection
+# breakage: ``ProtocolError`` / ``ReadTimeoutError`` carry the useful word in the
+# class name, not in ``str(exc)``, which is why _is_transient matches both.
+_TRANSIENT_TOKENS = (
+    "Throttling",
+    "TooManyRequests",
+    "ServiceUnavailable",
+    "500",
+    "Response ended prematurely",
+    "IncompleteRead",
+    "ProtocolError",
+    "ReadTimeout",
+    "ConnectionReset",
+    "Connection aborted",
+)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """True for upstream hiccups: throttling, 5xx, or a dropped connection."""
+    text = f"{type(exc).__name__}: {exc}"
+    return any(token in text for token in _TRANSIENT_TOKENS)
 
 
 def _raise_bedrock_error(exc: Exception, cfg: ResolvedLLM) -> None:
@@ -364,6 +407,11 @@ def _raise_bedrock_error(exc: Exception, cfg: ResolvedLLM) -> None:
         hint = "未找到 AWS 凭证：填写 Access Key/Secret 或 Profile 名。"
     elif "ThrottlingException" in message or "TooManyRequests" in message:
         hint = "请求被限流，稍后重试。"
+    elif "Response ended prematurely" in message or "ProtocolError" in name:
+        hint = (
+            "网络或代理把 Bedrock 的流式连接掐断了（VPN、公司代理常见）。"
+            "已自动重试仍失败，稍后再试即可。"
+        )
 
     details: dict[str, Any] = {
         "error_type": name,
@@ -414,17 +462,107 @@ async def bedrock_chat_complete(
         except LLMError:
             raise
         except Exception as exc:
-            retryable = any(
-                token in str(exc)
-                for token in ("Throttling", "TooManyRequests", "ServiceUnavailable", "500")
-            )
-            if retryable and attempt <= cfg.max_retries:
+            if _is_transient(exc) and attempt <= cfg.max_retries:
                 logger.warning("bedrock_retry", attempt=attempt, error=str(exc)[:200])
                 await asyncio.sleep(2**attempt)
                 continue
             _raise_bedrock_error(exc, cfg)
 
     raise LLMError("Bedrock request failed after retries.")
+
+
+class _StreamAccumulator:
+    """Completion assembled from ``converse_stream`` events, one event at a time.
+
+    Split out of the read loop so the retry path can ask ``produced`` -- did this
+    attempt get anything out before the connection died? -- which is what decides
+    between restarting the call and salvaging a partial answer.
+    """
+
+    def __init__(self) -> None:
+        self.text_parts: list[str] = []
+        self.tool_calls: list[dict[str, Any]] = []
+        self.current: dict[str, str] | None = None
+        self.stop_reason = "end_turn"
+        self.usage_raw: dict[str, Any] = {}
+
+    @property
+    def produced(self) -> bool:
+        """Whether anything already reached the caller (and so the UI)."""
+        return bool(self.text_parts or self.tool_calls or self.current)
+
+    @property
+    def char_count(self) -> int:
+        return sum(len(part) for part in self.text_parts)
+
+    def apply(
+        self, event: dict[str, Any], on_text: Callable[[str], None] | None
+    ) -> None:
+        start = (event.get("contentBlockStart") or {}).get("start") or {}
+        tool_start = start.get("toolUse")
+        if tool_start:
+            self.current = {
+                "id": str(tool_start.get("toolUseId") or ""),
+                "name": str(tool_start.get("name") or ""),
+                "input": "",
+            }
+
+        delta = (event.get("contentBlockDelta") or {}).get("delta") or {}
+        text = delta.get("text")
+        if text:
+            self.text_parts.append(text)
+            if on_text is not None:
+                on_text(text)
+        tool_delta = delta.get("toolUse") or {}
+        fragment = tool_delta.get("input")
+        if self.current is not None and fragment:
+            if isinstance(fragment, dict):
+                self.current["input"] = json.dumps(fragment, ensure_ascii=False)
+            else:
+                self.current["input"] += str(fragment)
+
+        if "contentBlockStop" in event and self.current is not None:
+            raw_input = self.current["input"] or "{}"
+            try:
+                parsed = json.loads(raw_input)
+            except json.JSONDecodeError:
+                parsed = {}
+            self.tool_calls.append(
+                {
+                    "id": self.current["id"],
+                    "type": "function",
+                    "function": {
+                        "name": self.current["name"],
+                        "arguments": json.dumps(parsed, ensure_ascii=False)
+                        if not isinstance(parsed, str)
+                        else parsed,
+                    },
+                }
+            )
+            self.current = None
+
+        message_stop = event.get("messageStop") or {}
+        if message_stop.get("stopReason"):
+            self.stop_reason = str(message_stop["stopReason"])
+
+        meta_usage = (event.get("metadata") or {}).get("usage")
+        if isinstance(meta_usage, dict):
+            self.usage_raw = meta_usage
+
+    def result(self, *, finish_reason: str | None = None) -> CompletionResult:
+        from app.llm.client import CompletionResult, Usage  # noqa: PLC0415
+
+        return CompletionResult(
+            content="".join(self.text_parts),
+            tool_calls=self.tool_calls,
+            finish_reason=finish_reason
+            or _STOP_REASON_MAP.get(self.stop_reason, self.stop_reason),
+            usage=Usage(
+                prompt_tokens=self.usage_raw.get("inputTokens", 0) or 0,
+                completion_tokens=self.usage_raw.get("outputTokens", 0) or 0,
+                total_tokens=self.usage_raw.get("totalTokens", 0) or 0,
+            ),
+        )
 
 
 async def bedrock_chat_complete_stream(
@@ -437,9 +575,19 @@ async def bedrock_chat_complete_stream(
     tools: list[dict[str, Any]] | None = None,
     on_text: Callable[[str], None] | None = None,
 ) -> CompletionResult:
-    """Streaming Bedrock completion that still returns a full ``CompletionResult``."""
-    from app.llm.client import CompletionResult, Usage
+    """Streaming Bedrock completion that still returns a full ``CompletionResult``.
 
+    A ``converse_stream`` response can die halfway through -- the connection is
+    open for as long as the model talks, so a proxy or an idle-connection reaper
+    surfaces as ``ProtocolError: Response ended prematurely`` mid-iteration.
+    Two different recoveries, because they are not the same situation:
+
+    * Nothing decoded yet -> restart the call. No text has reached ``on_text``,
+      so a restart cannot duplicate anything on screen and needs no token_clear.
+    * Something decoded already -> return it with ``finish_reason="interrupted"``.
+      It is on the user's screen and already paid for; verify sees the marker and
+      asks the model to continue from the break instead of scrapping the turn.
+    """
     client = await _get_client(cfg)
     kwargs = _build_kwargs(
         cfg,
@@ -450,89 +598,43 @@ async def bedrock_chat_complete_stream(
         tools=tools,
     )
 
-    try:
-        response = await asyncio.to_thread(lambda: client.converse_stream(**kwargs))
-    except Exception as exc:
-        _raise_bedrock_error(exc, cfg)
-        raise
-
-    text_parts: list[str] = []
-    tool_calls: list[dict[str, Any]] = []
-    current: dict[str, str] | None = None
-    stop_reason = "end_turn"
-    usage_raw: dict[str, Any] = {}
-
-    sentinel = object()
-    iterator = iter(response["stream"])
-
-    while True:
-        event = await asyncio.to_thread(next, iterator, sentinel)
-        if event is sentinel:
-            break
-        if not isinstance(event, dict):
-            continue
-
-        start = (event.get("contentBlockStart") or {}).get("start") or {}
-        tool_start = start.get("toolUse")
-        if tool_start:
-            current = {
-                "id": str(tool_start.get("toolUseId") or ""),
-                "name": str(tool_start.get("name") or ""),
-                "input": "",
-            }
-
-        delta = (event.get("contentBlockDelta") or {}).get("delta") or {}
-        text = delta.get("text")
-        if text:
-            text_parts.append(text)
-            if on_text is not None:
-                on_text(text)
-        tool_delta = delta.get("toolUse") or {}
-        fragment = tool_delta.get("input")
-        if current is not None and fragment:
-            if isinstance(fragment, dict):
-                current["input"] = json.dumps(fragment, ensure_ascii=False)
-            else:
-                current["input"] += str(fragment)
-
-        if "contentBlockStop" in event and current is not None:
-            raw_input = current["input"] or "{}"
-            try:
-                parsed = json.loads(raw_input)
-            except json.JSONDecodeError:
-                parsed = {}
-            tool_calls.append(
-                {
-                    "id": current["id"],
-                    "type": "function",
-                    "function": {
-                        "name": current["name"],
-                        "arguments": json.dumps(parsed, ensure_ascii=False)
-                        if not isinstance(parsed, str)
-                        else parsed,
-                    },
-                }
+    for attempt in range(1, cfg.max_retries + 2):
+        acc = _StreamAccumulator()
+        try:
+            response = await asyncio.to_thread(
+                lambda: client.converse_stream(**kwargs)
             )
-            current = None
+            sentinel = object()
+            iterator = iter(response["stream"])
+            while True:
+                event = await asyncio.to_thread(next, iterator, sentinel)
+                if event is sentinel:
+                    break
+                if isinstance(event, dict):
+                    acc.apply(event, on_text)
+        except LLMError:
+            raise
+        except Exception as exc:
+            if acc.produced:
+                logger.warning(
+                    "bedrock_stream_salvaged",
+                    attempt=attempt,
+                    chars=acc.char_count,
+                    tool_calls=len(acc.tool_calls),
+                    error=str(exc)[:200],
+                )
+                return acc.result(finish_reason="interrupted")
+            if _is_transient(exc) and attempt <= cfg.max_retries:
+                logger.warning(
+                    "bedrock_stream_retry", attempt=attempt, error=str(exc)[:200]
+                )
+                await asyncio.sleep(2**attempt)
+                continue
+            _raise_bedrock_error(exc, cfg)
+        else:
+            return acc.result()
 
-        message_stop = event.get("messageStop") or {}
-        if message_stop.get("stopReason"):
-            stop_reason = str(message_stop["stopReason"])
-
-        meta_usage = (event.get("metadata") or {}).get("usage")
-        if isinstance(meta_usage, dict):
-            usage_raw = meta_usage
-
-    return CompletionResult(
-        content="".join(text_parts),
-        tool_calls=tool_calls,
-        finish_reason=_STOP_REASON_MAP.get(stop_reason, stop_reason),
-        usage=Usage(
-            prompt_tokens=usage_raw.get("inputTokens", 0) or 0,
-            completion_tokens=usage_raw.get("outputTokens", 0) or 0,
-            total_tokens=usage_raw.get("totalTokens", 0) or 0,
-        ),
-    )
+    raise LLMError("Bedrock stream failed after retries.")
 
 
 async def bedrock_chat_stream(
@@ -548,6 +650,11 @@ async def bedrock_chat_stream(
 
     The botocore event stream is a blocking iterator, so each item is pulled in
     a worker thread.
+
+    No retry or salvage here, unlike ``bedrock_chat_complete_stream``: deltas are
+    yielded as they arrive, so anything already handed to the caller cannot be
+    taken back. A mid-stream break is only translated into ``LLMError`` so the
+    caller gets a readable reason instead of a raw urllib3 exception.
     """
     client = await _get_client(cfg)
     kwargs = _build_kwargs(
@@ -569,7 +676,13 @@ async def bedrock_chat_stream(
     iterator = iter(response["stream"])
 
     while True:
-        event = await asyncio.to_thread(next, iterator, sentinel)
+        try:
+            event = await asyncio.to_thread(next, iterator, sentinel)
+        except LLMError:
+            raise
+        except Exception as exc:
+            _raise_bedrock_error(exc, cfg)
+            return
         if event is sentinel:
             break
         delta = (event or {}).get("contentBlockDelta", {}).get("delta", {})

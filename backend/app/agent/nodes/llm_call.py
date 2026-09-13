@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.execution_trace import guard_step
 from app.agent.progress import emit, has_sink
-from app.agent.state import AgentState
+from app.agent.state import TODO_ONLY_LOOP_BUDGET, TOOL_LOOP_GRACE, AgentState
 from app.agent.tools import openai_tool_schemas
 from app.chat_modes.catalog import LIGHT_TOOLS, TOOL_FULL, TOOL_LIGHT, TOOL_NONE
 from app.core.config import settings
@@ -59,6 +60,18 @@ async def llm_call_node(state: AgentState, *, session: AsyncSession) -> AgentSta
         "tool_loop_count": (state.get("tool_loop_count") or 0),
     }
 
+    if result.finish_reason == "interrupted":
+        # The adapter already salvaged what it had; say so in the timeline, or the
+        # continuation looks like the model randomly restarting mid-sentence.
+        trace = list(state.get("execution_trace") or [])
+        trace.append(
+            guard_step(
+                "上游连接中断，已保留本次生成的内容并继续续写"
+                f"（{len(result.content or '')} 字）"
+            )
+        )
+        updated["execution_trace"] = trace
+
     # Append assistant message so subsequent loop iterations keep full context.
     assistant_msg: Message = {"role": "assistant", "content": result.content}
     if result.tool_calls:
@@ -73,7 +86,21 @@ def should_call_tools(state: AgentState) -> str:
     if (state.get("tool_policy") or TOOL_FULL) == TOOL_NONE:
         return "verify"
     tool_calls = state.get("tool_calls") or []
+    if not tool_calls:
+        return "verify"
+    names = [
+        str((call.get("function") or {}).get("name") or "")
+        for call in tool_calls
+    ]
+    if names and all(name == "todo_write" for name in names):
+        # A checklist-only round spends no work loop, so bound it separately
+        # or a model that keeps re-planning would never reach verify.
+        if (state.get("todo_loop_count") or 0) >= TODO_ONLY_LOOP_BUDGET:
+            return "verify"
+        return "tools"
     loop_count = state.get("tool_loop_count") or 0
-    if tool_calls and loop_count < settings.agent_max_tool_loops:
+    # The grace batches keep a tool the model just asked for (stats / webpage)
+    # from being dropped the moment the counter reaches the cap.
+    if loop_count < settings.agent_max_tool_loops + TOOL_LOOP_GRACE:
         return "tools"
     return "verify"

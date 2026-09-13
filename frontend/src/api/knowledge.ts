@@ -1,5 +1,6 @@
 import { API_BASE, ApiError, USER_ID, api } from './client';
 import { t } from '../i18n/core';
+import { readStreamChunk } from './chat';
 import type { ExecutionStep } from './types';
 
 export type SearchMode = 'keyword' | 'fulltext' | 'hybrid' | 'vector';
@@ -399,7 +400,7 @@ export async function askAssistantStream(
   let donePayload: AssistantAskResponse | null = null;
 
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await readStreamChunk(reader);
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const chunks = buffer.split('\n\n');

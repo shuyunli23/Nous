@@ -32,6 +32,13 @@ async def plan_node(state: AgentState) -> AgentState:
             "needs_retry": False,
         }
     required = infer_required_tools(goal)
+    if not required:
+        todo_text = " ".join(
+            str(item.get("content") or "")
+            for item in list(state.get("todos") or [])
+            if item.get("status") != "completed"
+        )
+        required = infer_required_tools(todo_text)
     must_embed = wants_document_photo(goal)
     todos = list(state.get("todos") or [])
     trace = list(state.get("execution_trace") or [])

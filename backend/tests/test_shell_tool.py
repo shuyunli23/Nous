@@ -187,6 +187,35 @@ def test_runtime_default_mode_cannot_exceed_ceiling(tmp_path: Path) -> None:
     reset_shell_store()
 
 
+def test_bash_chain_detection_ignores_quoted_operators() -> None:
+    assert sb.has_bash_chain("cd agi-brief && python stats.py") is True
+    assert sb.has_bash_chain("test -f a || echo missing") is True
+    # Operators inside a quoted argument are data, not shell syntax.
+    assert sb.has_bash_chain("python -c \"print('a && b')\"") is False
+    assert sb.has_bash_chain("echo hello") is False
+
+
+def test_windows_bash_chains_avoid_powershell_5() -> None:
+    import os
+    import shutil
+
+    if os.name != "nt":
+        return
+    argv, name = sb.build_shell_argv("cd agi-brief && python stats.py")
+    if shutil.which("pwsh"):
+        # pwsh 7 understands the chain, so keep the UTF-8 preamble.
+        assert name == "pwsh"
+        assert argv[-1].startswith(sb._PS_UTF8_PREAMBLE)
+    else:
+        assert name == "cmd"
+        assert argv[:3] == ["cmd.exe", "/d", "/s"]
+    argv2, name2 = sb.build_shell_argv("echo hello")
+    assert name2 in {"powershell", "pwsh", "cmd"}
+    if name2 != "cmd":
+        assert argv2[-1].startswith(sb._PS_UTF8_PREAMBLE)
+        assert argv2[-1].endswith("echo hello")
+
+
 def test_execute_blocked_command_does_not_run(tmp_path: Path) -> None:
     _use_workspace(tmp_path)
     settings.shell_tool_enabled = True

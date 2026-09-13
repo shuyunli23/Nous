@@ -132,8 +132,10 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 
-uvicorn app.main:app --reload --port 8000
+python run_dev.py
 ```
+
+`run_dev.py` 会排除 `data/`。不要用裸的 `uvicorn --reload`：它仍会监视当前目录，Agent 一写 `data/shell_workspace/*.py` 就会把正在跑的对话重启掉。
 
 启动成功后：
 
@@ -346,7 +348,7 @@ CORS_ORIGINS=http://localhost:3000
 | `LLM_API_KEY` | 空 | 兜底密钥 |
 | `LLM_MODEL` | `deepseek-chat` | 兜底模型 |
 | `LLM_TEMPERATURE` | `0.3` | |
-| `LLM_MAX_TOKENS` | `2048` | |
+| `LLM_MAX_TOKENS` | `8192` | 单次补全上限；设置里可调到当前模型支持的最大值。旧的 `2048` 视为「没选过」，按模型上限处理，避免网页/PPT JSON 被截断 |
 | `LLM_TIMEOUT_SECONDS` | `120` | |
 | `LLM_MAX_RETRIES` | `2` | 仅对 429/5xx 重试，指数退避 |
 | `RUNTIME_LLM_CONFIG_ENABLED` | `true` | 设为 `false` 则关闭 UI 配置，只认 `.env` |

@@ -8,8 +8,8 @@ reply invented an export URL, steer another LLM turn.
 from __future__ import annotations
 
 from app.agent.execution_trace import verify_step
-from app.agent.goal import evaluate_turn
-from app.agent.state import AgentState
+from app.agent.goal import evaluate_turn, settle_todos
+from app.agent.state import TOOL_LOOP_GRACE, AgentState
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.llm.client import Message
@@ -21,6 +21,14 @@ async def verify_node(state: AgentState) -> AgentState:
     required = list(state.get("required_tools") or [])
     trace = list(state.get("execution_trace") or [])
     response = state.get("response") or ""
+    leftover = []
+    for call in state.get("tool_calls") or []:
+        name = str((call.get("function") or {}).get("name") or "")
+        if name:
+            leftover.append(name)
+    # Credit checklist items the artifacts already prove, so a forgotten
+    # closing todo_write cannot deadlock the turn.
+    todos = settle_todos(state.get("todos"), trace)
     verdict = evaluate_turn(
         required_tools=required,
         response=response,
@@ -28,6 +36,9 @@ async def verify_node(state: AgentState) -> AgentState:
         exports_dir=settings.resolve_path("./data/exports"),
         must_embed_image=bool(state.get("must_embed_image")),
         goal_text=state.get("goal_text") or "",
+        todos=todos,
+        pending_tool_names=leftover,
+        finish_reason=state.get("finish_reason") or "",
     )
 
     if verdict.complete:
@@ -47,15 +58,24 @@ async def verify_node(state: AgentState) -> AgentState:
                 if has_inspect:
                     detail += " · " + verdict.inspect_summary.replace("inspect: ", "")
                 trace.append(verify_step(ok=True, detail=detail))
-        return {**state, "needs_retry": False, "execution_trace": trace}
+        return {
+            **state,
+            "needs_retry": False,
+            "execution_trace": trace,
+            "todos": todos,
+        }
 
     attempts = (state.get("verify_attempts") or 0) + 1
     loop_count = state.get("tool_loop_count") or 0
     can_retry = (
         attempts <= settings.agent_max_verify_retries
-        and loop_count < settings.agent_max_tool_loops
+        and loop_count < settings.agent_max_tool_loops + TOOL_LOOP_GRACE
     )
     bits = []
+    if verdict.truncated:
+        bits.append("回答被上游断流截断")
+    if verdict.open_todos:
+        bits.append("清单未完成")
     if verdict.missing_tools:
         bits.append("缺少 " + "、".join(verdict.missing_tools))
     if verdict.failed_tools:
@@ -89,11 +109,19 @@ async def verify_node(state: AgentState) -> AgentState:
         "verify_attempts": attempts,
         "execution_trace": trace,
         "tool_calls": [],
+        "todos": todos,
     }
     if can_retry:
         messages: list[Message] = list(state.get("messages") or [])
         messages.append({"role": "user", "content": verdict.critique()})
         updated["messages"] = messages
+    elif verdict.truncated:
+        note = (
+            "\n\n（上面的回答被网络中断截断了，重试也没能续上。"
+            "已生成的部分保留在这里，直接说「继续」我就接着写。）"
+        )
+        if note.strip() not in response:
+            updated["response"] = response.rstrip() + note
     elif verdict.delivery_gaps or verdict.missing_embedded_image:
         note = (
             "\n\n未能完成：我核对了刚生成的文件，里面没有你要的内容"

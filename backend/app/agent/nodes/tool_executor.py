@@ -93,12 +93,28 @@ async def tool_executor_node(state: AgentState, *, session: AsyncSession) -> Age
             messages.append({"role": "user", "content": reminder})
             trace.append(guard_step(reminder))
 
+    names = [
+        str((tc.get("function") or {}).get("name") or "")
+        for tc in tool_calls
+    ]
+    # Checklist updates are not work; counting them burned the 12-loop cap
+    # before stats.py / create_webpage could run. They are not free either --
+    # each still costs an LLM call, so they draw on their own budget.
+    work_calls = [name for name in names if name and name != "todo_write"]
+    loop_count = state.get("tool_loop_count") or 0
+    todo_loop_count = state.get("todo_loop_count") or 0
+    if work_calls:
+        loop_count += 1
+    elif names:
+        todo_loop_count += 1
+
     return {
         **state,
         "messages": messages,
         "tool_calls": [],
         "todos": todos,
         "repeat_chain": chain,
-        "tool_loop_count": (state.get("tool_loop_count") or 0) + 1,
+        "tool_loop_count": loop_count,
+        "todo_loop_count": todo_loop_count,
         "execution_trace": trace,
     }

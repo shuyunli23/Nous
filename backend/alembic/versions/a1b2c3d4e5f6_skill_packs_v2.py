@@ -18,7 +18,15 @@ down_revision: Union[str, None] = "fe1df9979a40"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-JSONType = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
+def JSONType() -> sa.types.TypeEngine:
+    """Fresh JSON type per column (JSONB on Postgres).
+
+    A factory, not a module-level instance: ``with_variant`` returns a type
+    *object*, and calling it (``JSONType()`` below) raised
+    ``TypeError: 'JSON' object is not callable``, so this revision could never
+    run. Keeping the call sites intact means one fix instead of six.
+    """
+    return sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
 def upgrade() -> None:

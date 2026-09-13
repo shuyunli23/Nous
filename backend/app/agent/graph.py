@@ -40,7 +40,11 @@ from app.agent.nodes.retrieve_skills import retrieve_skills_node
 from app.agent.nodes.tool_executor import tool_executor_node
 from app.agent.nodes.verify import should_continue_after_verify, verify_node
 from app.agent.progress import emit_node_end, emit_node_start, stamp_node_trace
-from app.agent.state import AgentState
+from app.agent.state import (
+    TODO_ONLY_LOOP_BUDGET,
+    TOOL_LOOP_GRACE,
+    AgentState,
+)
 
 NodeFn = Callable[..., Awaitable[AgentState]]
 
@@ -65,10 +69,15 @@ def graph_recursion_limit() -> int:
     Default is 25. A tool-heavy turn is startup (~5 hops) plus two hops
     per tool batch (llm_call → tool_executor), plus verify/persist and
     optional verify retries. Size the ceiling from the same knobs that
-    already cap the loop so a 12-loop brief cannot die as an opaque
+    already cap the loop -- including the grace batches, which the loop
+    edge will happily spend -- so a 12-loop brief cannot die as an opaque
     ``GraphRecursionError``.
     """
-    loops = max(1, settings.agent_max_tool_loops)
+    loops = (
+        max(1, settings.agent_max_tool_loops)
+        + TOOL_LOOP_GRACE
+        + TODO_ONLY_LOOP_BUDGET
+    )
     retries = max(0, settings.agent_max_verify_retries)
     return max(60, 8 + 3 * (loops + retries + 2))
 
@@ -180,6 +189,7 @@ async def run_agent(
         "title_source": title_source or query,
         "vision_parts": list(vision_parts or []),
         "tool_loop_count": 0,
+        "todo_loop_count": 0,
         "verify_attempts": 0,
         "needs_retry": False,
         "required_tools": [],
@@ -228,7 +238,25 @@ def _map_run_error(exc: Exception, conversation_id: str) -> AppError:
         merged = {**exc.details, **details}
         exc.details = merged
         return exc
+    # Anything else is a bug or an environment problem. The traceback only goes
+    # to the server log, which is gone by the time anyone reads the chat, so
+    # name the exception in details -- otherwise the stored turn says nothing.
+    details["exception"] = type(exc).__name__
+    details["exception_message"] = str(exc)[:300]
+    if _is_db_contention(exc):
+        return AppError(
+            "The database was locked by another process, so this turn could "
+            "not be saved. Send it again. (SQLite allows one writer: stop any "
+            "test script or second server writing the same data/*.db file.)",
+            details=details,
+        )
     return AppError(
         "This turn stopped before a reply was finished.",
         details=details,
     )
+
+
+def _is_db_contention(exc: Exception) -> bool:
+    """SQLite single-writer contention -- transient, worth retrying verbatim."""
+    text = str(exc).lower()
+    return "database is locked" in text or "database table is locked" in text

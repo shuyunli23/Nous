@@ -26,6 +26,7 @@ from app.core.exceptions import LLMError
 from app.core.logging import get_logger
 from app.llm.provider_store import resolve_llm
 from app.llm.providers import ResolvedLLM
+from app.llm.token_limits import clamp_request_max_tokens
 
 logger = get_logger(__name__)
 
@@ -544,7 +545,9 @@ def _build_payload(
         "model": model or cfg.model,
         "messages": messages,
         "temperature": temperature if temperature is not None else cfg.temperature,
-        "max_tokens": max_tokens or cfg.max_tokens,
+        "max_tokens": clamp_request_max_tokens(
+            cfg.kind, model or cfg.model, max_tokens, cfg.max_tokens
+        ),
         "stream": stream,
     }
     if tools:

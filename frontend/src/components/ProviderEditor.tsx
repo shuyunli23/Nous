@@ -8,6 +8,7 @@ import type {
 } from '../api/types';
 import { isChatProviderKind } from '../api/types';
 import { useI18n } from '../i18n';
+import { LEGACY_MAX_TOKENS, outputTokenCap } from '../lib/tokenLimits';
 
 interface ProviderEditorProps {
   /** Existing provider to edit, or null to create a new one. */
@@ -105,7 +106,9 @@ export default function ProviderEditor({
           ? ''
           : String(provider.temperature),
       max_tokens:
-        provider.max_tokens === null || provider.max_tokens === undefined
+        provider.max_tokens === null ||
+        provider.max_tokens === undefined ||
+        provider.max_tokens === LEGACY_MAX_TOKENS
           ? ''
           : String(provider.max_tokens),
       hf_provider: provider.hf_provider ?? 'fal-ai',
@@ -515,15 +518,32 @@ export default function ProviderEditor({
               <label htmlFor="provider-max-tokens">
                 {t('provider.maxTokens')}
               </label>
-              <input
-                id="provider-max-tokens"
-                type="number"
-                min={1}
-                step={128}
-                value={form.max_tokens}
-                onChange={(e) => set('max_tokens', e.target.value)}
-                placeholder={t('provider.inheritEnv')}
-              />
+              <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                <input
+                  id="provider-max-tokens"
+                  type="number"
+                  min={256}
+                  max={outputTokenCap(form.kind, form.model)}
+                  step={256}
+                  value={form.max_tokens}
+                  onChange={(e) => set('max_tokens', e.target.value)}
+                  placeholder={String(outputTokenCap(form.kind, form.model))}
+                />
+                <button
+                  type="button"
+                  className="chat-btn chat-btn--ghost"
+                  onClick={() =>
+                    set('max_tokens', String(outputTokenCap(form.kind, form.model)))
+                  }
+                >
+                  {t('provider.maxTokensUseMax')}
+                </button>
+              </div>
+              <p className="field__hint">
+                {t('provider.maxTokensHint', {
+                  n: outputTokenCap(form.kind, form.model),
+                })}
+              </p>
             </div>
           </div>
           )}

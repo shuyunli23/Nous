@@ -121,6 +121,7 @@ export const zh = {
     newTitle: '新会话',
     loadFailed: '加载会话失败。',
     sendFailed: '发送失败，请重试。',
+    streamStalled: '模型输出中断，连接已断开。',
     turnKept: '问题与执行步骤已保留，可直接在本对话继续。',
     llmHint: '（检查 backend/.env 中的 LLM_API_KEY）',
     closedExtracting: '会话已关闭，Skill 抽取已在后台触发。稍后可在 Skill 管理页查看。',
@@ -558,6 +559,7 @@ export const zh = {
     region: 'AWS 区域',
     baseUrl: 'Base URL',
     tempTokens: 'Temperature / Max tokens',
+    tokenCap: '上限 {n}',
     savedProviders: '已保存的供应商',
     empty:
       '还没有保存任何供应商。点「新增供应商」可以接入 DeepSeek、通义千问、AWS Bedrock、FLUX 文生图等，密钥只存在本机。',
@@ -901,7 +903,10 @@ export const zh = {
     baseUrlHint: '填到 /v1 为止，不要带 /chat/completions。',
     apiKeyPlaceholder: 'sk-…（本地模型可留空）',
     temperature: 'Temperature（可选）',
-    maxTokens: 'Max tokens（可选）',
+    maxTokens: '输出上限 (max tokens)',
+    maxTokensUseMax: '用上限',
+    maxTokensHint:
+      '本模型最多 {n}。网页 / PPT 内容多时请点「用上限」，否则生成容易半截失败。',
     inheritEnv: '沿用 .env',
     testTitle: '不保存，用当前填写试调。没改密钥时沿用已保存的。',
     testNeedKey: '先填齐必填项。编辑时可沿用已保存的密钥。',

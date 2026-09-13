@@ -97,6 +97,27 @@ export function applyLiveTrace(
   return prev;
 }
 
+/** Drop a hung SSE (backend reload / dead Bedrock stream) instead of spinning forever. */
+export const STREAM_IDLE_MS = 120_000;
+
+export async function readStreamChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  idleMs: number = STREAM_IDLE_MS,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const idle = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      void reader.cancel();
+      reject(new ApiError(0, 'stream_idle', t('chat.streamStalled')));
+    }, idleMs);
+  });
+  try {
+    return await Promise.race([reader.read(), idle]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export async function sendMessageStream(
   message: string,
   conversationId: string | null | undefined,
@@ -141,7 +162,7 @@ export async function sendMessageStream(
   let donePayload: ChatResponse | null = null;
 
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await readStreamChunk(reader);
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const chunks = buffer.split('\n\n');

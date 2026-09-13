@@ -35,23 +35,24 @@ def upgrade() -> None:
     )
     op.create_index("ix_chat_modes_user", "chat_modes", ["user_id"])
     op.create_index("ix_chat_modes_key", "chat_modes", ["key"], unique=True)
-    op.add_column(
-        "conversations",
-        sa.Column("mode_id", sa.String(length=36), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_conversations_mode_id",
-        "conversations",
-        "chat_modes",
-        ["mode_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    # Batch mode, not bare op.create_foreign_key: SQLite cannot ALTER a
+    # constraint onto an existing table, so alembic has to copy-and-move.
+    # Postgres ignores the batch wrapper and emits plain ALTERs.
+    with op.batch_alter_table("conversations") as batch:
+        batch.add_column(sa.Column("mode_id", sa.String(length=36), nullable=True))
+        batch.create_foreign_key(
+            "fk_conversations_mode_id",
+            "chat_modes",
+            ["mode_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_conversations_mode_id", "conversations", type_="foreignkey")
-    op.drop_column("conversations", "mode_id")
+    with op.batch_alter_table("conversations") as batch:
+        batch.drop_constraint("fk_conversations_mode_id", type_="foreignkey")
+        batch.drop_column("mode_id")
     op.drop_index("ix_chat_modes_key", table_name="chat_modes")
     op.drop_index("ix_chat_modes_user", table_name="chat_modes")
     op.drop_table("chat_modes")

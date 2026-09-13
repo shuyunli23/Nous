@@ -445,6 +445,9 @@ export default function SettingsPage() {
             <span className="stat__label">{t('settings.tempTokens')}</span>
             <span className="stat__value mono">
               {active.temperature} / {active.max_tokens}
+              {active.output_token_cap
+                ? ` (${t('settings.tokenCap', { n: active.output_token_cap })})`
+                : ''}
             </span>
           </div>
         </div>
@@ -638,6 +641,9 @@ export default function SettingsPage() {
             <span className="stat__label">{t('settings.tempTokens')}</span>
             <span className="stat__value mono">
               {env.temperature} / {env.max_tokens}
+              {env.output_token_cap
+                ? ` (${t('settings.tokenCap', { n: env.output_token_cap })})`
+                : ''}
             </span>
           </div>
         </div>

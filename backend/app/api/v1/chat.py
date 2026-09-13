@@ -22,6 +22,11 @@ logger = get_logger(__name__)
 
 router = APIRouter(tags=["chat"])
 
+# How often to emit an SSE keepalive while a node is working silently. Must stay
+# well under the client's STREAM_IDLE_MS (120s in frontend/src/api/chat.ts), which
+# aborts the request when no bytes arrive.
+_SSE_HEARTBEAT_SECONDS = 15.0
+
 
 @dataclass(frozen=True)
 class _ParsedChat:
@@ -118,7 +123,17 @@ async def chat_stream(
         task = asyncio.create_task(run())
         try:
             while True:
-                item = await queue.get()
+                try:
+                    item = await asyncio.wait_for(
+                        queue.get(), timeout=_SSE_HEARTBEAT_SECONDS
+                    )
+                except TimeoutError:
+                    # A comment frame: no `data:` line, so the client's parser skips
+                    # it, but it still counts as traffic and resets the reader's
+                    # idle timer. Without it a turn that thinks quietly for longer
+                    # than the frontend's STREAM_IDLE_MS is reported as stalled.
+                    yield ": ping\n\n"
+                    continue
                 if item is None:
                     break
                 yield f"data: {json.dumps(item, ensure_ascii=False, default=str)}\n\n"

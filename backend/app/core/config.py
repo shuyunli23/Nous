@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "deepseek-chat"
     llm_temperature: float = 0.3
-    llm_max_tokens: int = 2048
+    llm_max_tokens: int = 8192
     llm_timeout_seconds: float = 120.0
     llm_max_retries: int = 2
 

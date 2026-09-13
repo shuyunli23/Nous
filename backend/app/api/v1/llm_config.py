@@ -21,6 +21,7 @@ from app.llm.provider_store import (
     resolve_llm,
 )
 from app.llm.providers import IMAGE_ONLY_KINDS, PRESETS, ProviderRecord, ResolvedLLM
+from app.llm.token_limits import effective_max_tokens, output_token_cap
 from app.schemas.common import OkResponse
 from app.schemas.llm_config import (
     ActiveLLMView,
@@ -52,6 +53,7 @@ def _to_view(record: ProviderRecord, active_id: str | None) -> ProviderView:
     data = record.public_dict()
     data["is_active"] = record.id == active_id
     data["has_credentials"] = resolve_from_record(record).configured
+    data["output_token_cap"] = output_token_cap(record.kind, record.model)
     return ProviderView.model_validate(data)
 
 
@@ -67,6 +69,7 @@ def _active_view(cfg: ResolvedLLM) -> ActiveLLMView:
         configured=cfg.configured,
         temperature=cfg.temperature,
         max_tokens=cfg.max_tokens,
+        output_token_cap=output_token_cap(cfg.kind, cfg.model),
     )
 
 
@@ -86,7 +89,14 @@ def _config_response() -> LLMConfigResponse:
             model=settings.llm_model,
             has_api_key=bool(settings.llm_api_key),
             temperature=settings.llm_temperature,
-            max_tokens=settings.llm_max_tokens,
+            max_tokens=effective_max_tokens(
+                "openai_compatible",
+                settings.llm_model,
+                settings.llm_max_tokens,
+            ),
+            output_token_cap=output_token_cap(
+                "openai_compatible", settings.llm_model
+            ),
         ),
         providers=[_to_view(r, active_id) for r in store.list()],
         presets=[PresetView.model_validate(p.model_dump()) for p in PRESETS],

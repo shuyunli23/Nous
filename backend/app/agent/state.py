@@ -6,6 +6,19 @@ from typing import Any, TypedDict
 
 from app.llm.client import Message, Usage
 
+# Extra tool batches allowed past ``agent_max_tool_loops`` so a call the model
+# just issued is not dropped on the floor at the cap. Shared by the loop edge
+# (llm_call), the retry gate (verify) and the graph recursion ceiling, which
+# must all agree on where a turn really ends.
+TOOL_LOOP_GRACE = 2
+
+# Checklist-only rounds do no work, so tool_executor does not spend a work loop
+# on them -- but they still cost an LLM call, so they get their own small budget.
+# Without it a model that keeps re-emitting todo_write never moves the work
+# counter and only the graph recursion ceiling stops the turn, as an opaque
+# GraphRecursionError instead of a normal verify.
+TODO_ONLY_LOOP_BUDGET = 3
+
 
 class AgentState(TypedDict, total=False):
     # Inputs (set before graph runs)
@@ -29,6 +42,7 @@ class AgentState(TypedDict, total=False):
 
     # Control
     tool_loop_count: int
+    todo_loop_count: int          # rounds that only touched the checklist
     verify_attempts: int
     needs_retry: bool
     required_tools: list[str]

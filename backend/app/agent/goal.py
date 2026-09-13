@@ -16,6 +16,7 @@ from app.agent.artifacts import (
     format_inspect_for_prompt,
     inspects_from_trace,
 )
+from app.agent.todo import unfinished_todos
 from app.agent.tools.export_urls import EXPORT_URL_RE
 
 ATTACH_START = "<!--nous-attachments-->"
@@ -311,6 +312,53 @@ def webpage_has_embedded_image(trace: list[dict[str, Any]] | None, exports_dir) 
     return "data:image" in html or "/uploads/" in html or "src=" in html
 
 
+def settle_todos(
+    todos: list[dict[str, Any]] | None,
+    trace: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Tick off checklist items an artifact already proves are done.
+
+    A model that builds the deck and then forgets the closing ``todo_write``
+    would otherwise leave the list forever open, and the turn could never
+    verify. Real execution results outrank the model's self-report, so settle
+    from the trace instead of trusting it to remember.
+    """
+    ok = successful_tools(trace)
+    if not ok:
+        return list(todos or [])
+    settled: list[dict[str, Any]] = []
+    for item in todos or []:
+        entry = dict(item)
+        if entry.get("status") != "completed":
+            needs = infer_required_tools(str(entry.get("content") or ""))
+            if needs and all(name in ok for name in needs):
+                entry["status"] = "completed"
+        settled.append(entry)
+    return settled
+
+
+def split_todos_by_evidence(
+    todos: list[dict[str, Any]] | None,
+    ok_tools: set[str],
+) -> tuple[list[str], list[str]]:
+    """Unfinished items, split into blocking and advisory.
+
+    Blocking means the item names an artifact tool that has not succeeded --
+    a gap the harness can actually see. Prose items like "整理提纲" name no
+    tool, so nothing here can prove them either way; holding the turn hostage
+    to those just burns retries, so they only earn a critique line.
+    """
+    blocking: list[str] = []
+    advisory: list[str] = []
+    for content in unfinished_todos(todos):
+        needs = infer_required_tools(content)
+        if needs and any(name not in ok_tools for name in needs):
+            blocking.append(content)
+        else:
+            advisory.append(content)
+    return blocking, advisory
+
+
 @dataclass
 class TurnVerdict:
     complete: bool
@@ -320,6 +368,9 @@ class TurnVerdict:
     missing_embedded_image: bool = False
     delivery_gaps: list[str] = field(default_factory=list)
     inspect_summary: str = ""
+    open_todos: list[str] = field(default_factory=list)
+    unverifiable_todos: list[str] = field(default_factory=list)
+    truncated: bool = False
 
     def critique(self) -> str:
         lines = [
@@ -327,8 +378,26 @@ class TurnVerdict:
             "This turn is incomplete. Do not give a final answer yet.",
             "Do not claim the task is done.",
         ]
+        if self.truncated:
+            lines.append(
+                "Your previous reply was cut off mid-stream by a network fault, "
+                "not by you. Continue from exactly where it stops -- do not "
+                "restart and do not repeat what you already wrote."
+            )
         if self.inspect_summary:
             lines.append(self.inspect_summary)
+        if self.open_todos:
+            lines.append(
+                "The standing todo list is not finished. Do the next item; "
+                "do not write a final answer. Still open: "
+                + "; ".join(self.open_todos[:8])
+            )
+        if self.unverifiable_todos:
+            lines.append(
+                "Also still unchecked (no artifact proves these, so mark them "
+                "completed with todo_write once done): "
+                + "; ".join(self.unverifiable_todos[:8])
+            )
         if self.missing_tools:
             lines.append(
                 "You MUST call these tools now: " + ", ".join(self.missing_tools)
@@ -368,6 +437,9 @@ def evaluate_turn(
     exports_dir,
     must_embed_image: bool = False,
     goal_text: str = "",
+    todos: list[dict[str, Any]] | None = None,
+    pending_tool_names: list[str] | None = None,
+    finish_reason: str = "",
 ) -> TurnVerdict:
     ok = successful_tools(trace)
     missing = [name for name in required_tools if name not in ok]
@@ -390,13 +462,31 @@ def evaluate_turn(
                 "hero.image and rebuild."
             )
     missing_photo = any("image_count=0" in g or "hero_has_photo=false" in g for g in gaps)
-    complete = not missing and not failed and not invented and not gaps
+    open_todos, unverifiable = split_todos_by_evidence(todos, ok)
+    pending = [name for name in (pending_tool_names or []) if name]
+    if pending:
+        extra = [name for name in pending if name not in missing]
+        missing.extend(extra)
+    # A salvaged half-reply reads fluently, so nothing else here would catch it --
+    # without this the turn would stop mid-sentence and call itself done.
+    truncated = finish_reason == "interrupted"
+    complete = (
+        not missing
+        and not failed
+        and not invented
+        and not gaps
+        and not open_todos
+        and not truncated
+    )
     return TurnVerdict(
         complete=complete,
+        truncated=truncated,
         missing_tools=missing,
         failed_tools=failed,
         invented_urls=invented,
         missing_embedded_image=missing_photo,
         delivery_gaps=gaps,
         inspect_summary=format_inspect_for_prompt(inspects),
+        open_todos=open_todos,
+        unverifiable_todos=unverifiable,
     )

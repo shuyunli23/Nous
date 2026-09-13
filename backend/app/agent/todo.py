@@ -15,6 +15,17 @@ MAX_ITEMS = 20
 MAX_CONTENT = 200
 
 
+def unfinished_todos(todos: list[dict[str, str]] | None) -> list[str]:
+    """Contents still pending or in_progress (empty if the list is done)."""
+    leftover: list[str] = []
+    for item in todos or []:
+        if item.get("status") in {"pending", "in_progress"}:
+            content = str(item.get("content") or "").strip()
+            if content:
+                leftover.append(content)
+    return leftover
+
+
 def counts_of(todos: list[dict[str, str]]) -> dict[str, int]:
     counts = {"pending": 0, "in_progress": 0, "completed": 0}
     for item in todos:

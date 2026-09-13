@@ -123,6 +123,7 @@ export const en: Messages = {
     newTitle: 'New chat',
     loadFailed: 'Failed to load conversation.',
     sendFailed: 'Send failed. Please try again.',
+    streamStalled: 'The model stream stalled and the connection dropped.',
     turnKept: 'Your question and the steps so far are kept. Continue in this chat.',
     llmHint: ' (check LLM_API_KEY in backend/.env)',
     closedExtracting:
@@ -574,6 +575,7 @@ export const en: Messages = {
     region: 'AWS region',
     baseUrl: 'Base URL',
     tempTokens: 'Temperature / Max tokens',
+    tokenCap: 'cap {n}',
     savedProviders: 'Saved providers',
     empty:
       'No providers yet. Add DeepSeek, Qwen, AWS Bedrock, FLUX image models, and similar. Keys stay on this machine.',
@@ -925,7 +927,10 @@ export const en: Messages = {
     baseUrlHint: 'Stop at /v1. Do not include /chat/completions.',
     apiKeyPlaceholder: 'sk-… (optional for local models)',
     temperature: 'Temperature (optional)',
-    maxTokens: 'Max tokens (optional)',
+    maxTokens: 'Max output tokens',
+    maxTokensUseMax: 'Use max',
+    maxTokensHint:
+      'This model allows up to {n}. Use the maximum for rich webpages or decks.',
     inheritEnv: 'Use .env',
     testTitle: 'Probe the current form without saving. Unchanged keys reuse the stored value.',
     testNeedKey: 'Fill the required fields first. Editing can reuse the saved key.',

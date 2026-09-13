@@ -15,7 +15,23 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parents[1]
 DB_PATH = BACKEND / "data" / "migrationtest.db"
 DB_URL = "sqlite+aiosqlite:///./data/migrationtest.db"
-ALEMBIC = BACKEND / ".venv" / "Scripts" / "alembic.exe"
+
+def _python() -> str:
+    """Interpreter that has alembic installed.
+
+    Invoked as ``-m alembic`` rather than the ``alembic.exe`` console script:
+    the shim exits 1 with an empty stdout/stderr when its recorded interpreter
+    path has moved, which turned every migration bug into a bare
+    ``[FAIL] alembic upgrade head``. It is also the only form that works off
+    Windows.
+    """
+    for candidate in (
+        BACKEND / ".venv" / "Scripts" / "python.exe",
+        BACKEND / ".venv" / "bin" / "python",
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
 
 
 def tables() -> set[str]:
@@ -29,11 +45,13 @@ def tables() -> set[str]:
 def alembic(*args: str) -> None:
     env = {**os.environ, "DATABASE_URL": DB_URL, "PYTHONPATH": str(BACKEND)}
     result = subprocess.run(
-        [str(ALEMBIC), *args],
+        [_python(), "-m", "alembic", *args],
         cwd=BACKEND,
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if result.returncode != 0:
         print(f"[FAIL] alembic {' '.join(args)}")

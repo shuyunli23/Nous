@@ -1,5 +1,6 @@
 import { API_BASE, ApiError, USER_ID, api } from './client';
 import { t } from '../i18n/core';
+import { readStreamChunk } from './chat';
 import type {
   ConversationCloseResponse,
   ConversationDetail,
@@ -179,7 +180,7 @@ export async function runSettleStream(
   let donePayload: SettleRunResult | null = null;
 
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await readStreamChunk(reader);
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const chunks = buffer.split('\n\n');
