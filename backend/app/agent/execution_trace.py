@@ -229,10 +229,10 @@ def think_step(*, elapsed_ms: int, detail: str | None = None) -> dict[str, Any]:
     return step
 
 
-def answer_step() -> dict[str, Any]:
+def answer_step(*, used_tools: bool = False) -> dict[str, Any]:
     return {
         "kind": "answer",
         "title": "生成回答",
-        "detail": "基于工具结果整理回复",
+        "detail": "基于工具结果整理回复" if used_tools else "直接回答",
         "status": "ok",
     }

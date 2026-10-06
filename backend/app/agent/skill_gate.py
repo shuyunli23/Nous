@@ -49,6 +49,11 @@ _META = (
     "试试什么",
 )
 
+# 「聊了些什么」「说过啥」— a short filler may sit between the verb and 什么.
+_RECALL_LOOSE = re.compile(
+    r"(聊了|聊过|说过|说了|问过|问了|记得).{0,6}(什么|啥|哪些)"
+)
+
 _RETRY = (
     "再试试",
     "在试试",
@@ -83,7 +88,17 @@ def is_recall_query(query: str) -> bool:
     q = (query or "").strip()
     if not q:
         return False
-    return any(key in q for key in _META)
+    if any(key in q for key in _META):
+        return True
+    return _RECALL_LOOSE.search(q) is not None
+
+
+def is_social_turn(query: str) -> bool:
+    """Greetings and acknowledgements, not a task and not a continuation."""
+    compact = _normalize(query)
+    if not compact:
+        return False
+    return compact in {item.lower() for item in _GREETINGS}
 
 
 def should_retrieve_skills(query: str) -> bool:

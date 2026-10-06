@@ -101,7 +101,8 @@ async def persist_node(state: AgentState, *, session: AsyncSession) -> AgentStat
     )
     if has_work:
         if not any(step.get("kind") == "answer" for step in trace):
-            trace.append(answer_step())
+            used_tools = any(step.get("kind") == "tool" for step in trace)
+            trace.append(answer_step(used_tools=used_tools))
     else:
         # Pure Q&A with no tools/skills/plan — omit empty timeline noise.
         trace = []

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.goal import format_success_criteria
-from app.agent.skill_gate import is_recall_query, is_retry_or_continue
+from app.agent.skill_gate import is_recall_query, is_retry_or_continue, is_social_turn
 from app.agent.state import AgentState
 from app.agent.todo import TODO_GUIDANCE, format_todos_for_prompt
 from app.chat_modes.catalog import TOOL_FULL, WORKBENCH, resolve_system_prompt
@@ -24,7 +24,8 @@ async def compose_prompt_node(state: AgentState) -> AgentState:
         persona_block=state.get("persona_block") or "",
         knowledge_block=state.get("knowledge_block") or "",
     )
-    if policy == TOOL_FULL:
+    query = state.get("query") or ""
+    if policy == TOOL_FULL and not is_social_turn(query):
         criteria = format_success_criteria(
             state.get("goal_text") or "",
             list(state.get("required_tools") or []),
@@ -36,7 +37,6 @@ async def compose_prompt_node(state: AgentState) -> AgentState:
         if standing:
             system_prompt = f"{system_prompt}\n\n{standing}"
 
-    query = state.get("query") or ""
     if is_recall_query(query) or is_retry_or_continue(query):
         system_prompt += (
             "\n\n## 本轮注意\n"

@@ -457,13 +457,112 @@ def test_stamp_llm_think_keeps_model_text_and_tools() -> None:
     assert "get_weather" in out[-1]["detail"]
 
 
-def test_stamp_verify_synthesizes_step_when_node_skipped() -> None:
+def test_stamp_verify_skips_a_plain_reply() -> None:
     from app.agent.progress import stamp_node_trace
 
     out = stamp_node_trace("verify", [{"kind": "think"}], before=1, elapsed_ms=12)
+    assert all(step.get("kind") != "verify" for step in out)
+
+
+def test_stamp_verify_synthesizes_after_real_work() -> None:
+    from app.agent.progress import stamp_node_trace
+
+    out = stamp_node_trace(
+        "verify",
+        [{"kind": "plan"}, {"kind": "think"}],
+        before=2,
+        elapsed_ms=12,
+    )
     assert out[-1]["kind"] == "verify"
     assert out[-1]["elapsed_ms"] == 12
     assert out[-1]["status"] == "ok"
+
+
+def test_greeting_does_not_replay_the_standing_plan() -> None:
+    import asyncio
+
+    from app.agent.nodes.compose_prompt import compose_prompt_node
+    from app.agent.nodes.plan import plan_node
+
+    standing = [
+        {"content": "搜索 Agent 自主学习项目", "status": "completed"},
+        {"content": "整合信息，给出完整技术方案建议", "status": "in_progress"},
+    ]
+    planned = asyncio.run(
+        plan_node(
+            {
+                "query": "你好",
+                "history": [],
+                "todos": standing,
+                "execution_trace": [],
+                "tool_policy": "full",
+            }
+        )
+    )
+    assert planned["required_tools"] == []
+    assert not any(
+        step.get("kind") == "plan" for step in planned["execution_trace"]
+    )
+
+    prompted = asyncio.run(
+        compose_prompt_node(
+            {
+                "query": "你好",
+                "tool_policy": "full",
+                "todos": standing,
+                "history": [],
+            }
+        )
+    )
+    assert "Current todo list" not in prompted["system_prompt"]
+    assert "For multi-step work" not in prompted["system_prompt"]
+
+
+def test_continue_still_shows_the_standing_plan() -> None:
+    import asyncio
+
+    from app.agent.nodes.plan import plan_node
+
+    standing = [
+        {"content": "搜索开源项目", "status": "completed"},
+        {"content": "整合信息，给出完整技术方案建议", "status": "in_progress"},
+    ]
+    planned = asyncio.run(
+        plan_node(
+            {
+                "query": "继续",
+                "history": [],
+                "todos": standing,
+                "execution_trace": [],
+                "tool_policy": "full",
+            }
+        )
+    )
+    steps = [step for step in planned["execution_trace"] if step.get("kind") == "plan"]
+    assert len(steps) == 1
+    assert steps[0]["todos"] == standing
+
+
+def test_new_task_plan_does_not_reuse_old_checklist() -> None:
+    import asyncio
+
+    from app.agent.nodes.plan import plan_node
+
+    planned = asyncio.run(
+        plan_node(
+            {
+                "query": "做一页给领导的汇报网页",
+                "history": [],
+                "todos": [{"content": "搜索开源项目", "status": "in_progress"}],
+                "execution_trace": [],
+                "tool_policy": "full",
+            }
+        )
+    )
+    steps = [step for step in planned["execution_trace"] if step.get("kind") == "plan"]
+    assert len(steps) == 1
+    assert "todos" not in steps[0]
+    assert "create_webpage" in steps[0]["required_tools"]
 
 
 def test_skill_gate_skips_chitchat_and_recap() -> None:
@@ -471,6 +570,7 @@ def test_skill_gate_skips_chitchat_and_recap() -> None:
 
     assert should_retrieve_skills("你好") is False
     assert should_retrieve_skills("我问过你什么") is False
+    assert should_retrieve_skills("我们聊了些什么，很长时间了") is False
     assert should_retrieve_skills("在试试") is False
     assert should_retrieve_skills("我说了在试试？") is False
     assert should_retrieve_skills("生成一张美女的图像") is True

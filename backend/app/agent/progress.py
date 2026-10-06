@@ -145,8 +145,12 @@ def stamp_node_trace(
     elif name == "verify" and not any(
         step.get("kind") == "verify" for step in out[before:]
     ):
-        step = verify_step(ok=True, detail="已核对")
-        step["elapsed_ms"] = elapsed_ms
-        out.append(step)
+        # A greeting has nothing to check. Only close the trace when this
+        # turn actually planned or called a tool.
+        had_work = any(step.get("kind") in {"plan", "tool"} for step in out)
+        if had_work:
+            step = verify_step(ok=True, detail="已核对")
+            step["elapsed_ms"] = elapsed_ms
+            out.append(step)
 
     return out
