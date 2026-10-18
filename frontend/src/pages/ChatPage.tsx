@@ -171,7 +171,7 @@ export default function ChatPage() {
   } | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [providerId, setProviderId] = useState(readStoredProviderId);
-  const [resuming, setResuming] = useState(() => !routeId && !confirmedFromNav);
+  const [resuming, setResuming] = useState(() => Boolean(routeId) || !confirmedFromNav);
   const [newChatConfirmed, setNewChatConfirmed] = useState(confirmedFromNav);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
@@ -219,59 +219,53 @@ export default function ChatPage() {
   }, [routeId]);
 
   useEffect(() => {
-    if (!routeId) {
-      if (confirmedFromNav) {
-        setResuming(false);
-        setNewChatConfirmed(true);
-        setConversationId(null);
-        setMessages([]);
-        setSkillsByMessage({});
-        setTitle('');
-        setStatus('active');
-        setLockedMode(null);
-        setError(null);
-        setNotice(null);
-        setInboxLink(false);
-        if (newChatNav?.modeId) setSelectedModeId(newChatNav.modeId);
-        return;
-      }
+    if (!routeId && confirmedFromNav) {
+      setResuming(false);
+      setNewChatConfirmed(true);
+      setConversationId(null);
+      setMessages([]);
+      setSkillsByMessage({});
+      setTitle('');
+      setStatus('active');
+      setLockedMode(null);
+      setError(null);
+      setNotice(null);
+      setInboxLink(false);
+      if (newChatNav?.modeId) setSelectedModeId(newChatNav.modeId);
+      return;
+    }
 
-      let cancelled = false;
-      setResuming(true);
-      listConversations({ limit: 1, status: 'active' })
-        .then((page) => {
-          if (cancelled) return;
-          const latest = page.items[0];
-          if (latest) {
-            navigate(`/chat/${latest.id}`, { replace: true });
-            return;
-          }
-          setResuming(false);
+    setResuming(true);
+    setNewChatConfirmed(false);
+    setError(null);
+    setNotice(null);
+    setInboxLink(false);
+    let cancelled = false;
+    // Resolve and load the latest chat in place; redirecting first flashes
+    // the empty-chat screen and starts a second route-loading cycle.
+    async function loadConversation() {
+      let id = routeId;
+      if (!id) {
+        const page = await listConversations({ limit: 1, status: 'active' });
+        if (cancelled) return;
+        id = page.items[0]?.id;
+      }
+      if (!id) return null;
+      return getConversation(id);
+    }
+
+    loadConversation()
+      .then((detail) => {
+        if (cancelled) return;
+        if (!detail) {
           setConversationId(null);
           setMessages([]);
           setSkillsByMessage({});
           setTitle('');
           setStatus('active');
           setLockedMode(null);
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
-          setResuming(false);
-          setError(
-            err instanceof ApiError ? err.message : t('chat.loadFailed'),
-          );
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setResuming(false);
-    setNewChatConfirmed(false);
-    let cancelled = false;
-    getConversation(routeId)
-      .then((detail) => {
-        if (cancelled) return;
+          return;
+        }
         setConversationId(detail.id);
         setTitle(detail.title);
         setStatus(detail.status);
@@ -299,12 +293,15 @@ export default function ChatPage() {
         setError(
           err instanceof ApiError ? err.message : t('chat.loadFailed'),
         );
+      })
+      .finally(() => {
+        if (!cancelled) setResuming(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [routeId, confirmedFromNav, newChatNav?.modeId, navigate, t]);
+  }, [routeId, confirmedFromNav, newChatNav?.modeId, t]);
 
   const selectedMode =
     modes.find((mode) => mode.id === selectedModeId) ??
@@ -397,7 +394,7 @@ export default function ChatPage() {
           }));
         }
 
-        if (!routeId) {
+        if (!routeId && !conversationId) {
           navigate(`/chat/${response.conversation_id}`, { replace: true });
         }
       } catch (err: unknown) {
@@ -432,7 +429,7 @@ export default function ChatPage() {
                 : [...prev, optimistic];
               return [...kept, failed];
             });
-            if (!routeId) {
+            if (!routeId && !conversationId) {
               navigate(`/chat/${activeId}`, { replace: true });
             }
           } catch {
@@ -529,11 +526,11 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (autoOpenedPicker.current) return;
-    if (resuming || conversationId || newChatConfirmed) return;
+    if (resuming || error || conversationId || newChatConfirmed) return;
     if (modes.length === 0) return;
     autoOpenedPicker.current = true;
     openNewChatPicker();
-  }, [resuming, conversationId, newChatConfirmed, modes]);
+  }, [resuming, error, conversationId, newChatConfirmed, modes]);
 
   const closed = status === 'closed';
   const hero = heroCopy(modeKey, modeName, t, i18n.chat);
@@ -544,9 +541,9 @@ export default function ChatPage() {
         <div className="chat__heading">
           <OverflowTitle
             className="chat__title"
-            text={title || t('chat.newTitle')}
+            text={resuming ? t('common.loading') : title || t('chat.newTitle')}
           />
-          <div className="chat__meta faint">
+          {!resuming && <div className="chat__meta faint">
             <span className="badge badge--closed">{modeName}</span>
             {conversationId && (
               <span className="mono chat__id">
@@ -556,9 +553,9 @@ export default function ChatPage() {
                 })}
               </span>
             )}
-          </div>
+          </div>}
         </div>
-        <div className="chat__actions">
+        {!resuming && <div className="chat__actions">
           {closed && (
             <span className="badge badge--closed">{t('chat.closedBadge')}</span>
           )}
@@ -590,7 +587,7 @@ export default function ChatPage() {
             <PlusMark />
             {t('chat.newChat')}
           </button>
-        </div>
+        </div>}
       </header>
 
       {(error || notice) && (

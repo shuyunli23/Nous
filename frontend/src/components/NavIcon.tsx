@@ -1,4 +1,8 @@
 import type { ReactNode } from 'react';
+import NexusMark from './NexusMark';
+
+// Menu geometry: Lucide 1.17.0, matching the approved soft-duotone preview.
+// Copyright Lucide contributors; ISC license (see lucide-LICENSE.txt).
 
 export type NavIconName =
   | 'workbench'
@@ -12,14 +16,14 @@ export type NavIconName =
   | 'graph'
   | 'notes';
 
-function Icon({ children }: { children: ReactNode }) {
+function Icon({ children, duotone = false }: { children: ReactNode; duotone?: boolean }) {
   return (
     <svg
       className="nav-link__glyph"
       viewBox="0 0 24 24"
-      fill="none"
+      fill={duotone ? "#6dd9cb22" : "none"}
       stroke="currentColor"
-      strokeWidth="1.75"
+      strokeWidth={duotone ? 1.7 : 1.75}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -33,38 +37,37 @@ export default function NavIcon({ name }: { name: NavIconName }) {
   switch (name) {
     case 'workbench':
       return (
-        <Icon>
-          <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-4 3v-3.2A2.5 2.5 0 0 1 4 15.5z" />
+        <Icon duotone>
+          <rect width="7" height="9" x="3" y="3" rx="1" />
+          <rect width="7" height="5" x="14" y="3" rx="1" />
+          <rect width="7" height="9" x="14" y="12" rx="1" />
+          <rect width="7" height="5" x="3" y="16" rx="1" />
         </Icon>
       );
     case 'history':
       return (
-        <Icon>
-          <circle cx="12" cy="12" r="7.5" />
-          <path d="M12 8.2V12l2.5 1.5" />
-          <path d="M4.6 7.2 4 4.8l2.5.4" />
+        <Icon duotone>
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+          <path d="M3 3v5h5" />
+          <path d="M12 7v5l4 2" />
         </Icon>
       );
     case 'skills':
       return (
-        <Icon>
-          <path d="M12 3.8 13.5 8h4.6l-3.7 2.8 1.4 4.4L12 12.6 8.2 15.2 9.6 10.8 5.9 8h4.6z" />
+        <Icon duotone>
+          <path d="M10 22V7a1 1 0 0 0-1-1H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 0 0-1-1H2" />
+          <rect x="14" y="2" width="8" height="8" rx="1" />
         </Icon>
       );
     case 'knowledge':
-      return (
-        <Icon>
-          <path d="M5 6.4c1.7-1 3.8-1 5.5 0v11.4c-1.7-1-3.8-1-5.5 0z" />
-          <path d="M19 6.4c-1.7-1-3.8-1-5.5 0v11.4c1.7-1 3.8-1 5.5 0z" />
-        </Icon>
-      );
+      return <NexusMark className="nav-link__glyph nav-link__glyph--nexus" />;
     case 'settings':
       return (
-        <Icon>
-          <path d="M5 8.5h14" />
-          <path d="M5 15.5h14" />
-          <circle cx="10" cy="8.5" r="1.8" />
-          <circle cx="14" cy="15.5" r="1.8" />
+        <Icon duotone>
+          <path d="M14 17H5" />
+          <path d="M19 7h-9" />
+          <circle cx="17" cy="17" r="3" />
+          <circle cx="7" cy="7" r="3" />
         </Icon>
       );
     case 'harmony':
@@ -77,32 +80,50 @@ export default function NavIcon({ name }: { name: NavIconName }) {
       );
     case 'search':
       return (
-        <Icon>
-          <circle cx="11" cy="11" r="6.5" />
-          <path d="M16.2 16.2 20.5 20.5" />
+        <Icon duotone>
+          <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+          <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+          <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+          <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+          <circle cx="12" cy="12" r="3" />
+          <path d="m16 16-1.9-1.9" />
         </Icon>
       );
     case 'assistant':
       return (
-        <Icon>
-          <path d="M12 4.5 13.2 8h3.8l-3 2.3 1.1 3.6L12 11.7 8.9 13.9 10 10.3l-3-2.3h3.8z" />
+        <Icon duotone>
+          <path d="M12 6V2H8" />
+          <path d="M15 11v2" />
+          <path d="M2 12h2" />
+          <path d="M20 12h2" />
+          <path d="M20 16a2 2 0 0 1-2 2H8.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 4 20.286V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" />
+          <path d="M9 11v2" />
         </Icon>
       );
     case 'graph':
       return (
-        <Icon>
-          <circle cx="6.5" cy="17" r="2.2" />
-          <circle cx="17.5" cy="6.5" r="2.2" />
-          <circle cx="17.5" cy="17" r="2.2" />
-          <path d="M8.3 15.6 15.6 8.2" />
-          <path d="M8.7 17.2h6.4" />
+        <Icon duotone>
+          <path d="m10.586 5.414-5.172 5.172" />
+          <path d="m18.586 13.414-5.172 5.172" />
+          <path d="M6 12h12" />
+          <circle cx="12" cy="20" r="2" />
+          <circle cx="12" cy="4" r="2" />
+          <circle cx="20" cy="12" r="2" />
+          <circle cx="4" cy="12" r="2" />
         </Icon>
       );
     case 'notes':
       return (
-        <Icon>
-          <path d="M7.5 4.5h9A2 2 0 0 1 18.5 6.5v13l-3-1.5-3 1.5-3-1.5-3 1.5v-13A2 2 0 0 1 7.5 4.5z" />
-          <path d="M9.5 9h5.5M9.5 12.5h5.5" />
+        <Icon duotone>
+          <path d="M2 6h4" />
+          <path d="M2 10h4" />
+          <path d="M2 14h4" />
+          <path d="M2 18h4" />
+          <rect width="16" height="20" x="4" y="2" rx="2" />
+          <path d="M15 2v20" />
+          <path d="M15 7h5" />
+          <path d="M15 12h5" />
+          <path d="M15 17h5" />
         </Icon>
       );
   }

@@ -754,8 +754,8 @@ a:hover {
 }
 
 .brand-mark--nexus {
-  width: 62px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   object-fit: contain;
   overflow: visible;
 }
@@ -897,6 +897,12 @@ a:hover {
   width: 16px;
   height: 16px;
   display: block;
+}
+
+/* Compensate for the brand mark's internal padding at menu-icon size. */
+.nav-link__glyph--nexus {
+  width: 20px;
+  height: 20px;
 }
 
 .nav-link__copy {
@@ -4065,7 +4071,7 @@ tbody tr:hover {
   }
 
   .app-topbar .brand-mark--nexus {
-    width: 50px;
+    width: 32px;
   }
 
   .app-topbar .brand-name {
@@ -4901,18 +4907,18 @@ tbody tr:hover {
 }
 
 .km-turn--assistant .msg__avatar--nexus {
-  width: 46px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   color: #8b97a3;
 }
 
 .msg__avatar--nexus .msg__avatar-mark {
-  width: 46px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
 }
 
 .km-assistant__wait {
-  margin-left: 56px;
+  margin-left: 42px;
 }
 
 .km-bubble .exec,
