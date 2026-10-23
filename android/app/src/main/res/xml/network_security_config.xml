@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Dev and LAN servers are plain HTTP. The phone talks to the user's own Nous. -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

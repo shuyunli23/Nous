@@ -21,10 +21,15 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
         reload_dirs=[str(HERE / "app")],
+        # Relative globs. Absolute paths crash Python 3.11's Path.glob,
+        # and `data/` often does not exist until the first request.
         reload_excludes=[
-            str(HERE / "data"),
-            str(HERE / ".venv"),
-            str(HERE / "tests"),
+            "data",
+            "data/**",
+            ".venv",
+            ".venv/**",
+            "tests",
+            "tests/**",
             "_tmp_*.py",
         ],
         timeout_graceful_shutdown=5,
