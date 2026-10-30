@@ -37,6 +37,18 @@ async def plan_node(state: AgentState) -> AgentState:
         }
     continuing = is_retry_or_continue(query)
     required = infer_required_tools(goal)
+    material_plan = state.get("material_plan")
+    material_resume = False
+    if material_plan:
+        document_tools = [name for name in required if name in {"create_presentation", "create_pdf"}]
+        if not document_tools and any(word in query for word in ("修改", "调整", "改成", "改为", "换成", "重做", "补充", "更新", "再加", "改一下", "继续")):
+            document_tools = ["create_presentation" if item.get("kind") == "pptx" else "create_pdf"
+                              for item in material_plan.get("deliverables", []) if item.get("kind") in {"pptx", "pdf"}]
+        if document_tools:
+            required = list(dict.fromkeys(["plan_materials", *required, *document_tools, "review_materials"]))
+            material_resume = continuing and not any(word in query for word in ("修改", "调整", "改成", "改为", "换成", "补充", "更新", "再加"))
+            if material_resume:
+                required = [name for name in required if name != "plan_materials"]
     todos = list(state.get("todos") or [])
     if not required and continuing:
         todo_text = " ".join(
@@ -68,6 +80,7 @@ async def plan_node(state: AgentState) -> AgentState:
         **state,
         "goal_text": goal,
         "required_tools": required,
+        "material_resume": material_resume,
         "must_embed_image": must_embed,
         "execution_trace": trace,
         "needs_retry": False,

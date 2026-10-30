@@ -621,6 +621,11 @@ _TOOLS: dict[str, dict[str, Any]] = {
     },
 }
 
+from app.agent.tools.material_schemas import install_material_tools
+
+install_material_tools(_TOOLS)
+
+
 def _shell_gate() -> bool:
     from app.agent.tools.shell_config import resolve_shell
 
@@ -630,6 +635,7 @@ def _shell_gate() -> bool:
 # Tools that are only advertised / executable when a config flag enables them.
 _GATED_TOOLS: dict[str, Callable[[], bool]] = {
     "run_command": _shell_gate,
+    "verify_code_examples": _shell_gate,
 }
 
 
@@ -722,6 +728,8 @@ async def execute_tool(
     meta = _TOOLS.get(name)
     if meta is None:
         return {"ok": False, "error": f"Unknown tool '{name}'."}
+    if not _tool_available(name):
+        return {"ok": False, "error": f"Tool '{name}' is disabled by the operator."}
 
     args: dict[str, Any]
     if arguments is None:

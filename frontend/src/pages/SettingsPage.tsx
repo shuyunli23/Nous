@@ -82,6 +82,11 @@ const ROUTE_ROWS: {
     hint: 'settings.routeKnowledgeHint',
   },
   {
+    purpose: 'materials',
+    label: 'settings.routeMaterials',
+    hint: 'settings.routeMaterialsHint',
+  },
+  {
     purpose: 'image',
     label: 'settings.routeImage',
     hint: 'settings.routeImageHint',

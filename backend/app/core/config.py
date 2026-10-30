@@ -80,6 +80,8 @@ class Settings(BaseSettings):
     memory_max_chars: int = 48000
     agent_max_tool_loops: int = 12
     agent_max_verify_retries: int = 2
+    materials_max_tool_loops: int = 24
+    materials_llm_timeout_seconds: float = 300.0
 
     # --- Context governance (Harness guard + spill + compaction) ---
     # Repeat-tool reminder: advisory only, never blocks a call.

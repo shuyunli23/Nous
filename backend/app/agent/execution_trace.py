@@ -51,6 +51,21 @@ def _result_summary(name: str, result: dict[str, Any]) -> tuple[str, str]:
         err = result.get("error") or result.get("message") or "failed"
         return "error", _truncate(str(err), 180)
 
+    if name == "plan_materials":
+        plan = result.get("plan") or {}
+        return "ok", f"已规划 {len(plan.get('outline') or [])} 个页面/章节 · {plan.get('audience') or ''}"
+    if name == "write_material_draft":
+        return "ok", f"已保存 {result.get('kind')} 草稿 · 共 {result.get('item_count')} 项"
+    if name == "review_materials":
+        status = result.get("status")
+        issues = result.get("issues") or []
+        errors = sum(item.get("severity") == "error" for item in issues)
+        if status == "needs_revision":
+            return "error", f"材料需返修 · {errors} 个问题 · {result.get('download_url') or ''}"
+        if not result.get("visual_review_complete"):
+            return "info", f"已检查文件结构 · 视觉检查未全部完成 · {result.get('download_url') or ''}"
+        return "ok", f"已逐页审查 {result.get('total_pages') or 0} 页 · {result.get('download_url') or ''}"
+
     if name == "web_search":
         count = result.get("count")
         if count is None:
@@ -79,6 +94,9 @@ def _result_summary(name: str, result: dict[str, Any]) -> tuple[str, str]:
         "create_presentation",
         "create_pdf",
         "create_webpage",
+        "create_code_files",
+        "package_materials",
+        "verify_code_examples",
     } or name.startswith("pack__"):
         url = result.get("download_url") or result.get("url") or ""
         inspect = result.get("inspect") if isinstance(result.get("inspect"), dict) else {}
@@ -169,6 +187,26 @@ def tool_step(
     }
     if name == "todo_write" and isinstance(result.get("todos"), list):
         step["todos"] = result["todos"]
+    if name == "review_materials" and result.get("ok"):
+        step["material_review"] = {
+            key: result.get(key) for key in ("status", "review_complete", "review_scope", "visual_review_complete", "issues")
+        }
+        step["material_review"]["files"] = [
+            {key: item.get(key) for key in ("file", "sha256", "current_sha256", "issues", "render", "visual")}
+            for item in result.get("files") or []
+        ]
+    if name == "plan_materials" and result.get("ok"):
+        step["material_plan"] = result.get("plan")
+    if name == "write_material_draft" and result.get("ok"):
+        step["material_draft"] = {key: result.get(key) for key in ("draft_id", "plan_id", "kind", "item_count")}
+    if name in {"create_code_files", "verify_code_examples"}:
+        step["code_verification"] = {
+            key: result.get(key) for key in ("verification_status", "execution_enabled", "source_sha256")
+        }
+        if name == "create_code_files":
+            step["code_verification"]["source_sha256"] = {
+                item["filename"]: item["sha256"] for item in result.get("files") or []
+            }
     return step
 
 

@@ -457,6 +457,7 @@ export type LLMRoutePurpose =
   | 'notes'
   | 'memory'
   | 'knowledge'
+  | 'materials'
   | 'image';
 
 export type LLMRoutes = Record<LLMRoutePurpose, string | null>;

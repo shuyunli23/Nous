@@ -7,7 +7,9 @@ typography, accent bars, and layout-specific composition.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 from typing import Any
+import unicodedata
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -45,7 +47,7 @@ THEMES: dict[str, Theme] = {
     "nous": Theme(
         id="nous",
         label="Nous Teal",
-        bg=RGBColor(0xF4, 0xF7, 0xF6),
+        bg=RGBColor(0xF5, 0xF2, 0xEB),
         surface=RGBColor(0xFF, 0xFF, 0xFF),
         text=RGBColor(0x10, 0x20, 0x33),
         muted=RGBColor(0x5B, 0x6B, 0x7A),
@@ -143,6 +145,13 @@ def _fill_solid(shape, color: RGBColor) -> None:
     shape.fill.solid()
     shape.fill.fore_color.rgb = color
     shape.line.fill.background()
+    # Office theme presets may add shadows even when none were requested.
+    # A local empty effect list keeps generated text surfaces flat.
+    sp_pr = shape._element.spPr
+    if sp_pr.find("{http://schemas.openxmlformats.org/drawingml/2006/main}effectLst") is None:
+        sp_pr.append(OxmlElement("a:effectLst"))
+    for effect_ref in shape._element.iter("{http://schemas.openxmlformats.org/drawingml/2006/main}effectRef"):
+        effect_ref.set("idx", "0")
 
 
 def _add_rect(slide, left, top, width, height, color: RGBColor):
@@ -270,7 +279,9 @@ def _normalize_bullets(raw: Any) -> list[tuple[str, int]]:
             level = 0
         if text:
             out.append((text, max(0, min(level, 2))))
-    return out[:10]
+    if len(out) > 10:
+        raise ValueError("A slide contains more than 10 bullet points. Split the material into purposeful slides or move detail to speaker_notes/PDF; no points were discarded.")
+    return out
 
 
 def _normalize_code(raw: Any) -> list[str]:
@@ -286,7 +297,71 @@ def _normalize_code(raw: Any) -> list[str]:
         lines.pop()
     while lines and not lines[0].strip():
         lines.pop(0)
-    return lines[:24]
+    # Never turn a runnable example into an incomplete snippet silently.
+    return [line.replace("\u00a0", " ") for line in lines]
+
+
+def _display_units(text: str) -> int:
+    """Conservative width estimate: full-width CJK glyphs use two units."""
+    return sum(2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1 for char in text)
+
+
+def _add_picture_contained(slide, source: str, left, top, width, height, *, crop: bool = False):
+    from PIL import Image
+
+    from app.agent.tools.material_assets import resolve_material_asset
+
+    asset = resolve_material_asset(source)
+    try:
+        with Image.open(asset) as image:
+            if image.format not in {"PNG", "JPEG", "GIF", "BMP", "TIFF"}:
+                raise ValueError("PPT images must be PNG, JPEG, GIF, BMP or TIFF. Convert this asset first.")
+            pixel_w, pixel_h = image.size
+            image.verify()
+        if not pixel_w or not pixel_h:
+            raise ValueError("Material image has invalid dimensions.")
+        source_ratio = pixel_w / pixel_h
+        target_ratio = width / height
+        if crop:
+            picture = slide.shapes.add_picture(str(asset), left, top, width=width, height=height)
+            if source_ratio > target_ratio:
+                picture.crop_left = picture.crop_right = (1 - target_ratio / source_ratio) / 2
+            else:
+                picture.crop_top = picture.crop_bottom = (1 - source_ratio / target_ratio) / 2
+        else:
+            factor = min(width / pixel_w, height / pixel_h)
+            fitted_w, fitted_h = int(pixel_w * factor), int(pixel_h * factor)
+            picture = slide.shapes.add_picture(
+                str(asset), left + int((width - fitted_w) / 2), top + int((height - fitted_h) / 2),
+                width=fitted_w, height=fitted_h,
+            )
+        return picture
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"Cannot load material image '{asset.name}': {exc}") from exc
+
+
+def _write_speaker_notes(slide, item: dict[str, Any]) -> None:
+    notes = item.get("speaker_notes") or ""
+    if isinstance(notes, list):
+        notes = "\n\n".join(str(part) for part in notes)
+    references = item.get("references") or []
+    if isinstance(references, str):
+        references = [references]
+    sources: list[str] = []
+    for ref in references:
+        if isinstance(ref, dict):
+            label = str(ref.get("title") or ref.get("label") or "").strip()
+            url = str(ref.get("url") or "").strip()
+            sources.append(f"{label}: {url}" if label and url else label or url)
+        else:
+            sources.append(str(ref))
+    text = str(notes).strip()
+    if sources:
+        text += ("\n\n" if text else "") + "参考资料\n" + "\n".join(sources)
+    if text:
+        slide.notes_slide.notes_text_frame.text = text
 
 
 def _infer_layout(item: dict[str, Any]) -> str:
@@ -313,9 +388,18 @@ def _infer_layout(item: dict[str, Any]) -> str:
         "code_split": "code",
         "snippet": "code",
         "example": "code",
+        "table": "table",
+        "comparison": "table",
+        "figure": "figure",
+        "image": "figure",
+        "photo": "figure",
     }
     if explicit in aliases:
         return aliases[explicit]
+    if item.get("rows") is not None:
+        return "table"
+    if item.get("image"):
+        return "figure"
     if item.get("code") or item.get("source") or item.get("snippet"):
         return "code"
     if item.get("cards") or item.get("metrics"):
@@ -419,7 +503,21 @@ def compose_title(
     title: str,
     subtitle: str,
     brand: str,
+    image: str | None = None,
 ) -> None:
+    if image:
+        _paint_bg(slide, theme)
+        _add_picture_contained(slide, image, Inches(6.0), 0, Inches(7.333), _SLIDE_H, crop=True)
+        _textbox(slide, Inches(0.7), Inches(0.8), Inches(4.9), Inches(0.4),
+                 brand.upper(), theme=theme, size=12, bold=True, color=theme.accent)
+        title_width = Inches(4.9)
+        title_size = min(38, max(30, int((title_width.pt - 16) / max(1, _display_units(title)) / 0.56)))
+        _textbox(slide, Inches(0.7), Inches(2.15), title_width, Inches(2.1),
+                 title, theme=theme, size=title_size, bold=True, font=theme.title_font)
+        if subtitle:
+            _textbox(slide, Inches(0.7), Inches(4.65), Inches(4.9), Inches(1.2),
+                     subtitle, theme=theme, size=18, color=theme.muted)
+        return
     # Split cover: left accent panel + right content
     _paint_bg(slide, theme)
     panel_w = Inches(4.4)
@@ -625,7 +723,9 @@ def compose_cards(
     _accent_bar(slide, theme)
     _slide_heading(slide, theme, heading)
 
-    cards = cards[:4] or [{"label": "指标", "value": "—", "hint": ""}]
+    if len(cards) > 4:
+        raise ValueError("A cards slide supports at most 4 items. Split this content; no cards were discarded.")
+    cards = cards or [{"label": "指标", "value": "—", "hint": ""}]
     n = len(cards)
     margin = Inches(0.7)
     gap = Inches(0.28)
@@ -803,22 +903,23 @@ def compose_closing(
 
 def _write_code_lines(text_frame, lines: list[str], *, size: int = 13) -> None:
     text_frame.clear()
-    text_frame.word_wrap = True
+    text_frame.word_wrap = False
+    text_frame.margin_left = 0
+    text_frame.margin_right = 0
+    text_frame.margin_top = 0
+    text_frame.margin_bottom = 0
     if not lines:
         lines = [" "]
     for i, line in enumerate(lines):
         p = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
         p.alignment = PP_ALIGN.LEFT
         p.level = 0
-        # Keep leading spaces visible in PowerPoint
-        visible = line.replace(" ", "\u00A0") if line.strip() else "\u00A0"
-        _set_paragraph_spacing(p, space_before=0, space_after=2)
-        # gutter line number
-        num = p.add_run()
-        num.text = f"{i + 1:>2}  "
-        _set_run_font(num, size=size - 1, color=_CODE_DIM, font_name=_CODE_FONT)
+        # DrawingML preserves ordinary leading spaces. Keep source copyable:
+        # numbers and non-breaking spaces must not enter the code text.
+        _set_paragraph_spacing(p, space_before=0, space_after=0)
+        p.line_spacing = Pt(size * 1.15)
         body = p.add_run()
-        body.text = visible
+        body.text = line.replace("\u00a0", " ")
         _set_run_font(body, size=size, color=_CODE_FG, font_name=_CODE_FONT)
 
 
@@ -867,9 +968,21 @@ def compose_code(
         code_w - Inches(0.45),
         code_h - Inches(0.6),
     )
-    font_size = 12 if len(code_lines) > 14 else 13
-    if len(code_lines) > 18:
-        font_size = 11
+    if len(code_lines) > 24:
+        raise ValueError(
+            f"Code slide '{heading}' has {len(code_lines)} lines; the readable limit is 24. "
+            "Split it across slides, show a focused excerpt, and put the complete program in the handout/source files."
+        )
+    font_size = 18 if len(code_lines) <= 14 else (15 if len(code_lines) <= 18 else 12)
+    longest = max((_display_units(line) for line in code_lines), default=0)
+    width_points = Emu(code_w - Inches(0.45)).pt
+    while font_size > 12 and longest * font_size * 0.56 > width_points:
+        font_size -= 1
+    if longest * font_size * 0.56 > width_points:
+        raise ValueError(
+            f"A code line on slide '{heading}' is too wide for a readable slide. "
+            "Break long lines at language-safe boundaries, remove the explanation column, or move the full source into the handout."
+        )
     _write_code_lines(box.text_frame, code_lines, size=font_size)
 
     if has_explain:
@@ -902,6 +1015,94 @@ def compose_code(
     _add_footer(slide, theme, page, total, brand)
 
 
+def compose_table(
+    slide, theme: Theme, *, heading: str, columns: list[Any], rows: list[Any],
+    caption: str, page: int, total: int, brand: str,
+) -> None:
+    """Editable evidence table with conservative bounds, never clipped rows."""
+    if not isinstance(columns, list) or not 1 <= len(columns) <= 6:
+        raise ValueError(f"Table slide '{heading}' needs 1-6 column headings.")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"Table slide '{heading}' needs at least one data row.")
+    if len(rows) > 8:
+        raise ValueError(
+            f"Table slide '{heading}' has {len(rows)} data rows; the readable limit is 8. "
+            "Split the table across slides or put the full table in the PDF."
+        )
+    if any(not isinstance(row, (list, tuple)) or len(row) != len(columns) for row in rows):
+        raise ValueError(f"Every row on table slide '{heading}' must have {len(columns)} cells.")
+    values = [[str(value) if value is not None else "" for value in columns]] + [
+        [str(value) if value is not None else "" for value in row] for row in rows
+    ]
+    weights = [
+        min(30, max(7, max(_display_units(row[column]) for row in values)))
+        for column in range(len(columns))
+    ]
+    width = Inches(11.9)
+    widths = [int(width * weight / sum(weights)) for weight in weights]
+    widths[-1] += width - sum(widths)
+    font_size = 17
+    row_heights = []
+    for row in values:
+        lines = max(
+            sum(max(1, ceil(_display_units(line) * font_size * 0.56 / max(1, Emu(cell_w).pt - 18)))
+                for line in cell.split("\n"))
+            for cell, cell_w in zip(row, widths)
+        )
+        row_heights.append(Pt(lines * font_size * 1.2 + 16))
+    if sum(row_heights) > Inches(4.85):
+        raise ValueError(
+            f"Table slide '{heading}' is too dense to fit legibly. "
+            "Shorten cell text or split the table; no rows were discarded."
+        )
+    _paint_bg(slide, theme)
+    _slide_heading(slide, theme, heading)
+    shape = slide.shapes.add_table(
+        len(values), len(columns), Inches(0.7), Inches(1.6), width, sum(row_heights)
+    )
+    table = shape.table
+    for column, cell_w in zip(table.columns, widths):
+        column.width = cell_w
+    for r, row in enumerate(values):
+        table.rows[r].height = row_heights[r]
+        for c, text in enumerate(row):
+            cell = table.cell(r, c)
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = _CODE_BG if r == 0 else (theme.surface if r % 2 else theme.bg)
+            cell.margin_left = cell.margin_right = Pt(8)
+            cell.margin_top = cell.margin_bottom = Pt(7)
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+            cell.text_frame.clear()
+            cell.text_frame.word_wrap = True
+            for i, line in enumerate(text.split("\n")):
+                p = cell.text_frame.paragraphs[0] if i == 0 else cell.text_frame.add_paragraph()
+                p.line_spacing = Pt(font_size * 1.2)
+                _set_paragraph_spacing(p, space_after=0)
+                run = p.add_run()
+                run.text = line
+                _set_run_font(run, size=font_size, color=_LIGHT if r == 0 else theme.text,
+                              bold=r == 0, font_name=theme.body_font)
+    if caption:
+        _textbox(slide, Inches(0.7), Inches(6.55), Inches(11.9), Inches(0.42),
+                 caption, theme=theme, size=13, color=theme.muted)
+    _add_footer(slide, theme, page, total, brand)
+
+
+def compose_figure(
+    slide, theme: Theme, *, heading: str, image: str, caption: str,
+    page: int, total: int, brand: str,
+) -> None:
+    if not image:
+        raise ValueError(f"Figure slide '{heading}' requires an image reference.")
+    _paint_bg(slide, theme)
+    _slide_heading(slide, theme, heading)
+    _add_picture_contained(slide, image, Inches(0.7), Inches(1.5), Inches(11.9), Inches(4.9))
+    if caption:
+        _textbox(slide, Inches(0.7), Inches(6.55), Inches(11.9), Inches(0.42),
+                 caption, theme=theme, size=13, color=theme.muted)
+    _add_footer(slide, theme, page, total, brand)
+
+
 # ── public API ────────────────────────────────────────────────────────────
 
 
@@ -912,6 +1113,8 @@ def build_presentation(
     subtitle: str | None = None,
     theme_id: str | None = "nous",
     brand: str | None = None,
+    expected_slide_count: int | None = None,
+    cover_image: str | None = None,
 ) -> Presentation:
     """Build a designed Presentation object (not yet saved)."""
     theme = resolve_theme(theme_id)
@@ -923,10 +1126,18 @@ def build_presentation(
     prs.slide_height = _SLIDE_H
     blank = prs.slide_layouts[6]
 
+    if expected_slide_count is not None and (
+        isinstance(expected_slide_count, bool)
+        or not isinstance(expected_slide_count, int)
+        or not 1 <= expected_slide_count <= 60
+    ):
+        raise ValueError("expected_slide_count must be an integer from 1 to 60, including the cover.")
+    if not slides or len(slides) > 60:
+        raise ValueError("Presentation must contain 1-60 slide objects; split larger decks explicitly.")
     normalized: list[dict[str, Any]] = []
-    for raw in slides[:60]:
+    for raw in slides:
         if not isinstance(raw, dict):
-            continue
+            raise ValueError("Each slide must be an object with a heading and content.")
         item = dict(raw)
         item["_layout"] = _infer_layout(item)
         if not str(item.get("heading") or item.get("title") or "").strip():
@@ -942,7 +1153,7 @@ def build_presentation(
 
     # Auto cover if caller didn't start with a title layout
     has_cover = bool(normalized) and normalized[0]["_layout"] == "title"
-    content_slides = normalized if has_cover else [
+    content_slides = normalized if has_cover or expected_slide_count is not None else [
         {
             "heading": title,
             "subtitle": deck_subtitle or "Generated by Nous",
@@ -952,7 +1163,8 @@ def build_presentation(
     ]
 
     # Ensure a closing slide when deck has real content and no closing
-    if content_slides and content_slides[-1]["_layout"] != "closing" and len(content_slides) >= 3:
+    if (expected_slide_count is None and content_slides
+            and content_slides[-1]["_layout"] != "closing" and len(content_slides) >= 3):
         content_slides.append(
             {
                 "heading": "谢谢",
@@ -960,6 +1172,16 @@ def build_presentation(
                 "_layout": "closing",
             }
         )
+
+    if expected_slide_count is not None and len(content_slides) != expected_slide_count:
+        raise ValueError(
+            f"Expected exactly {expected_slide_count} slides including the cover, received {len(content_slides)}. "
+            "Provide the complete ordered slide list; the builder will not add cover or closing slides in exact-count mode."
+        )
+    if cover_image:
+        if content_slides[0]["_layout"] != "title":
+            raise ValueError("cover_image requires the first slide to use layout='title'.")
+        content_slides[0].setdefault("image", cover_image)
 
     # Page numbers skip title + closing for a cleaner feel? Count all content pages.
     numbered = [
@@ -971,7 +1193,7 @@ def build_presentation(
     page_cursor = 0
     section_idx = 0
 
-    for item in content_slides:
+    for slide_number, item in enumerate(content_slides, start=1):
         layout = item["_layout"]
         heading = str(item.get("heading") or item.get("title") or "").strip()
         sub = str(
@@ -981,6 +1203,7 @@ def build_presentation(
             or ""
         ).strip()
         slide = prs.slides.add_slide(blank)
+        _write_speaker_notes(slide, item)
 
         if layout == "title":
             compose_title(
@@ -989,6 +1212,7 @@ def build_presentation(
                 title=heading or title,
                 subtitle=sub or deck_subtitle,
                 brand=brand_text,
+                image=item.get("image") or item.get("cover_image"),
             )
             continue
 
@@ -1014,8 +1238,23 @@ def build_presentation(
             continue
 
         page_cursor += 1
-        page = page_cursor
-        total = total_numbered
+        page = slide_number if expected_slide_count is not None else page_cursor
+        total = expected_slide_count or total_numbered
+
+        if layout == "table":
+            compose_table(
+                slide, theme, heading=heading, columns=item.get("columns") or [],
+                rows=item.get("rows") or [], caption=str(item.get("caption") or ""),
+                page=page, total=total, brand=brand_text,
+            )
+            continue
+
+        if layout == "figure":
+            compose_figure(
+                slide, theme, heading=heading, image=str(item.get("image") or ""),
+                caption=str(item.get("caption") or ""), page=page, total=total, brand=brand_text,
+            )
+            continue
 
         if layout == "two_column":
             columns = item.get("columns") or []
@@ -1071,11 +1310,13 @@ def build_presentation(
                 if any(line.startswith(("    ", "\t", "public ", "class ", "if ", "for ")) for line in maybe):
                     code_lines = _normalize_code(maybe)
                     explain = []
+            if not code_lines:
+                raise ValueError(f"Code slide '{heading}' requires real code; provide a multiline code field.")
             compose_code(
                 slide,
                 theme,
                 heading=heading,
-                code_lines=code_lines or ["// (empty snippet)"],
+                code_lines=code_lines,
                 language=str(item.get("language") or item.get("lang") or "code"),
                 explain=explain,
                 page=page,
@@ -1086,7 +1327,9 @@ def build_presentation(
 
         if layout == "cards":
             raw_cards = item.get("cards") or item.get("metrics") or []
-            cards = [c for c in raw_cards if isinstance(c, dict)][:4]
+            if not isinstance(raw_cards, list) or any(not isinstance(c, dict) for c in raw_cards):
+                raise ValueError("Each card must be an object with label, value and hint.")
+            cards = list(raw_cards)
             compose_cards(
                 slide,
                 theme,

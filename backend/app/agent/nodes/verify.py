@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from app.agent.execution_trace import verify_step
 from app.agent.goal import evaluate_turn, settle_todos
-from app.agent.state import TOOL_LOOP_GRACE, AgentState
+from app.agent.state import TOOL_LOOP_GRACE, AgentState, tool_loop_limit
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.llm.client import Message
@@ -61,6 +61,7 @@ async def verify_node(state: AgentState) -> AgentState:
         return {
             **state,
             "needs_retry": False,
+            "verification_complete": True,
             "execution_trace": trace,
             "todos": todos,
         }
@@ -69,7 +70,7 @@ async def verify_node(state: AgentState) -> AgentState:
     loop_count = state.get("tool_loop_count") or 0
     can_retry = (
         attempts <= settings.agent_max_verify_retries
-        and loop_count < settings.agent_max_tool_loops + TOOL_LOOP_GRACE
+        and loop_count < tool_loop_limit(state) + TOOL_LOOP_GRACE
     )
     bits = []
     if verdict.truncated:
@@ -106,6 +107,7 @@ async def verify_node(state: AgentState) -> AgentState:
     updated: AgentState = {
         **state,
         "needs_retry": can_retry,
+        "verification_complete": False,
         "verify_attempts": attempts,
         "execution_trace": trace,
         "tool_calls": [],
@@ -124,8 +126,8 @@ async def verify_node(state: AgentState) -> AgentState:
             updated["response"] = response.rstrip() + note
     elif verdict.delivery_gaps or verdict.missing_embedded_image:
         note = (
-            "\n\n未能完成：我核对了刚生成的文件，里面没有你要的内容"
-            "（例如照片/配图并未真正嵌进去）。请再试一次，或改口说只要文字版。"
+            "\n\n本轮交付检查尚未全部通过。已生成的文件与草稿已保留，"
+            "可以在本会话继续修正页数、内容或尚未完成的审查。"
         )
         if note.strip() not in response:
             updated["response"] = response.rstrip() + note
@@ -133,7 +135,7 @@ async def verify_node(state: AgentState) -> AgentState:
         note = (
             "\n\n未能完成：还没有成功调用 "
             + "、".join(verdict.missing_tools)
-            + "，所以没有可打开的文件。请再发一次，或说明只要文字说明。"
+            + "。已完成的文件与草稿已保留，可以继续完成剩余交付。"
         )
         if note.strip() not in response:
             updated["response"] = response.rstrip() + note

@@ -627,6 +627,8 @@ export const en: Messages = {
     routeMemoryHint: 'Companion preferences and knowledge-profile updates.',
     routeKnowledge: 'Knowledge Q&A',
     routeKnowledgeHint: 'NexusMind assistant answers over your notes.',
+    routeMaterials: 'Material review',
+    routeMaterialsHint: 'Review PPT/PDF pages with an image-capable model. Follows the default model when unset.',
     routeImage: 'Image generation',
     routeImageHint:
       'Workbench drawing. Save several Flux / DALL·E / Bedrock configs and switch here. Unassigned uses HF_TOKEN / IMAGE_* from .env.',

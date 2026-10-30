@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.execution_trace import guard_step
 from app.agent.progress import emit, has_sink
-from app.agent.state import TODO_ONLY_LOOP_BUDGET, TOOL_LOOP_GRACE, AgentState
+from app.agent.state import TOOL_LOOP_GRACE, AgentState, is_material_turn, todo_only_loop_limit, tool_loop_limit
 from app.agent.tools import openai_tool_schemas
 from app.chat_modes.catalog import LIGHT_TOOLS, TOOL_FULL, TOOL_LIGHT, TOOL_NONE
 from app.core.config import settings
@@ -39,7 +39,15 @@ async def llm_call_node(state: AgentState, *, session: AsyncSession) -> AgentSta
         def on_text(text: str) -> None:
             emit({"type": "token", "text": text})
 
-    result = await chat_complete(messages, tools=tools, on_text=on_text)
+    call_options = {"tools": tools, "on_text": on_text}
+    if is_material_turn(state):
+        from app.llm.client import _config_for_call
+
+        cfg = _config_for_call(None)
+        call_options["config"] = cfg.model_copy(update={
+            "timeout_seconds": max(cfg.timeout_seconds, settings.materials_llm_timeout_seconds),
+        })
+    result = await chat_complete(messages, **call_options)
     if result.tool_calls:
         emit({"type": "token_clear"})
 
@@ -95,12 +103,12 @@ def should_call_tools(state: AgentState) -> str:
     if names and all(name == "todo_write" for name in names):
         # A checklist-only round spends no work loop, so bound it separately
         # or a model that keeps re-planning would never reach verify.
-        if (state.get("todo_loop_count") or 0) >= TODO_ONLY_LOOP_BUDGET:
+        if (state.get("todo_loop_count") or 0) >= todo_only_loop_limit(state):
             return "verify"
         return "tools"
     loop_count = state.get("tool_loop_count") or 0
     # The grace batches keep a tool the model just asked for (stats / webpage)
     # from being dropped the moment the counter reaches the cap.
-    if loop_count < settings.agent_max_tool_loops + TOOL_LOOP_GRACE:
+    if loop_count < tool_loop_limit(state) + TOOL_LOOP_GRACE:
         return "tools"
     return "verify"

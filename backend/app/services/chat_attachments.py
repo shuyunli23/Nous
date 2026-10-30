@@ -287,13 +287,13 @@ def build_attachment_query(
     return query, vision, title_source
 
 
-def _model_supports_vision() -> bool:
+def _model_supports_vision(config=None) -> bool:
     try:
         from app.llm.provider_store import resolve_llm
         from app.llm.usage import current_usage_meta
 
         meta = current_usage_meta()
-        cfg = resolve_llm(purpose=meta.purpose, provider_id=meta.provider_id)
+        cfg = config if config is not None else resolve_llm(purpose=meta.purpose, provider_id=meta.provider_id)
     except Exception:
         return False
     name = f"{cfg.kind} {cfg.model or ''}".lower()

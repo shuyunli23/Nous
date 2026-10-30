@@ -610,6 +610,8 @@ export const zh = {
     routeMemoryHint: '记下偏好、更新知识基础。',
     routeKnowledge: '知识库问答',
     routeKnowledgeHint: 'NexusMind 助手按笔记检索后作答。',
+    routeMaterials: '材料审查',
+    routeMaterialsHint: '逐页审查 PPT / PDF，建议选支持图片理解的模型；未指定时跟随默认模型。',
     routeImage: '文生图',
     routeImageHint:
       '工作台画图。可保存多套 Flux / DALL·E / Bedrock，在这里切换。未指定则用 .env 的 HF_TOKEN / IMAGE_*。',

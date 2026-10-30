@@ -183,10 +183,22 @@ async def create_presentation(
     slides: list[dict[str, Any]] | str | None = None,
     subtitle: str | None = None,
     theme: str = "nous",
+    expected_slide_count: int | None = None,
+    cover_image: str | None = None,
+    plan_id: str | None = None,
+    draft_id: str | None = None,
     **extra: Any,
 ) -> dict[str, Any]:
     """Build a designed deck. Tolerates alias keys / JSON-string slides from LLMs."""
     # Models often omit `slides` or nest it under aliases when the payload is large.
+    if draft_id:
+        from app.agent.tools.material_workflow import load_material_draft
+
+        if slides is not None:
+            return {"ok": False, "error": "Pass slides or draft_id, not both."}
+        draft = load_material_draft(draft_id, "pptx", plan_id)
+        slides = draft["items"]
+        plan_id = plan_id or draft["plan_id"]
     if slides is None:
         for key in ("pages", "deck", "content", "slides_json", "presentation"):
             if key in extra and extra[key] is not None:
@@ -213,6 +225,14 @@ async def create_presentation(
 
     title_val = (title or extra.get("name") or "Untitled")
     title_val = str(title_val).strip() or "Untitled"
+    from app.agent.tools.material_workflow import apply_material_plan
+
+    plan = apply_material_plan(plan_id, "pptx")
+    planned_count = plan.get("expected_slide_count")
+    if planned_count is not None:
+        if expected_slide_count is not None and expected_slide_count != planned_count:
+            return {"ok": False, "error": "expected_slide_count conflicts with the saved plan. Update the plan or supply the planned total."}
+        expected_slide_count = planned_count
     if not isinstance(slides, list) or not slides:
         return {
             "ok": False,
@@ -252,6 +272,8 @@ async def create_presentation(
             subtitle=subtitle or extra.get("subtitle"),
             theme_id=theme or extra.get("theme") or "nous",
             brand="Nous",
+            expected_slide_count=expected_slide_count,
+            cover_image=cover_image,
         )
     except ImportError:
         return {
@@ -286,6 +308,7 @@ async def create_presentation(
         "theme": resolved_theme,
         "themes_available": theme_ids,
         "slide_count": len(prs.slides),
+        "plan_id": plan_id,
         "filename": filename,
         "path": str(path),
         "download_url": download_url,
@@ -324,9 +347,23 @@ async def create_pdf(
     title: str | None = None,
     sections: list[dict[str, Any]] | str | None = None,
     subtitle: str | None = None,
+    audience: str | None = None,
+    objectives: list[str] | None = None,
+    references: list[dict[str, str]] | None = None,
+    cover_image: str | None = None,
+    plan_id: str | None = None,
+    draft_id: str | None = None,
     **extra: Any,
 ) -> dict[str, Any]:
     """Build an A4 PDF handout/tutorial. Not a slide deck."""
+    if draft_id:
+        from app.agent.tools.material_workflow import load_material_draft
+
+        if sections is not None:
+            return {"ok": False, "error": "Pass sections or draft_id, not both."}
+        draft = load_material_draft(draft_id, "pdf", plan_id)
+        sections = draft["items"]
+        plan_id = plan_id or draft["plan_id"]
     if sections is None:
         for key in ("pages", "chapters", "content", "sections_json", "document"):
             if key in extra and extra[key] is not None:
@@ -354,6 +391,9 @@ async def create_pdf(
         sections = inner if isinstance(inner, list) else [sections]
 
     title_val = str(title or extra.get("name") or "Untitled").strip() or "Untitled"
+    from app.agent.tools.material_workflow import apply_material_plan
+
+    plan = apply_material_plan(plan_id, "pdf")
     if not isinstance(sections, list) or not sections:
         return {
             "ok": False,
@@ -397,6 +437,10 @@ async def create_pdf(
             sections=sections,
             subtitle=subtitle or extra.get("subtitle"),
             brand="Nous",
+            audience=audience or plan.get("audience"),
+            objectives=objectives or plan.get("objectives"),
+            references=references or plan.get("references"),
+            cover_image=cover_image,
         )
     except ImportError:
         return {
@@ -417,6 +461,7 @@ async def create_pdf(
         "ok": True,
         "title": title_val,
         "page_count": page_count,
+        "plan_id": plan_id,
         "filename": filename,
         "path": str(path),
         "download_url": download_url,

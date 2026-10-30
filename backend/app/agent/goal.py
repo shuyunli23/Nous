@@ -7,6 +7,8 @@ looks like* before the model is allowed to stop.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import re
 from typing import Any
 from urllib.parse import unquote
 
@@ -50,6 +52,9 @@ _PDF_GEN_HINTS = (
     "export pdf",
     "写成pdf",
     "写成 pdf",
+    "pdf 讲义",
+    "一份pdf",
+    "一份 pdf",
 )
 _IMAGE_HINTS = (
     "生成图片",
@@ -92,7 +97,12 @@ _SOURCE_HINTS = (
 
 def wants_existing_source(goal: str) -> bool:
     text = (goal or "").lower()
-    return any(key in text for key in _SOURCE_HINTS)
+    if not any(key in text for key in _SOURCE_HINTS):
+        return False
+    # Source files are often one deliverable in a new training kit. Only a
+    # request to inspect existing source should bypass artifact authoring.
+    creating = re.search(r"制作|生成|导出|交付|做|create|generate", text)
+    return not creating
 
 
 def wants_document_photo(goal: str) -> bool:
@@ -129,7 +139,7 @@ def infer_required_tools(goal: str) -> list[str]:
     wants_web = any(key in text for key in _WEBPAGE_HINTS)
     if wants_web:
         required.append("create_webpage")
-    elif wants_ppt:
+    if wants_ppt:
         required.append("create_presentation")
     if any(key in text for key in _PDF_GEN_HINTS):
         required.append("create_pdf")
@@ -151,9 +161,50 @@ def infer_required_tools(goal: str) -> list[str]:
         "create_pdf",
         "generate_image",
     ]
-    return [name for name in preferred if name in required] + [
+    routed = [name for name in preferred if name in required] + [
         name for name in required if name not in preferred
     ]
+    if needs_material_workflow(goal, routed):
+        return ["plan_materials", *routed, "review_materials"]
+    return routed
+
+
+def needs_material_workflow(goal: str, tools: list[str] | None = None) -> bool:
+    text = (goal or "").lower()
+    if tools is None:
+        has_ppt = any(key in text for key in _PPT_HINTS)
+        has_pdf = any(key in text for key in _PDF_GEN_HINTS)
+    else:
+        has_ppt, has_pdf = "create_presentation" in tools, "create_pdf" in tools
+    rich = any(key in text for key in ("培训", "讲义", "课程", "授课", "教学", "自学", "精制", "丰富", "高质量", "training", "handout", "self-study"))
+    return (has_ppt and has_pdf) or ((has_ppt or has_pdf) and rich)
+
+
+def requested_slide_count(goal: str) -> int | None:
+    text = (goal or "").lower()
+    target = r"(?:pptx?|幻灯片|演示文稿|powerpoint|slides?)"
+    number = r"(\d{1,2}|[一二三四五六七八九十两]{1,3})"
+    unit = r"(?:页|张|[- ]?slides?)"
+    patterns = (rf"{number}\s*{unit}\s*(?:的\s*)?{target}",
+                rf"{target}[\s,，:：]*(?:总共|总计|共|一共|需要|做成|改成|改为)?\s*{number}\s*{unit}",
+                rf"{target}(?:(?!pdf)[^。\n，,；;]){{0,18}}?{number}\s*{unit}")
+    digits = {char: i for i, char in enumerate("零一二三四五六七八九")}
+    digits["两"] = 2
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        raw = match.group(1)
+        if raw.isdecimal():
+            count = int(raw)
+        elif "十" in raw:
+            tens, ones = raw.split("十", 1)
+            count = digits.get(tens, 1) * 10 + digits.get(ones, 0)
+        else:
+            count = digits.get(raw, 0)
+        if 1 <= count <= 60:
+            return count
+    return None
 
 
 def format_success_criteria(goal: str, required_tools: list[str]) -> str:
@@ -178,6 +229,12 @@ def format_success_criteria(goal: str, required_tools: list[str]) -> str:
         "(image_count, hero_has_photo, has_code, empty_headings, headings, pages). That is what the file actually contains. "
         "You may only claim facts inspect confirms. If inspect contradicts the user goal, call the tool again.",
     ]
+    if "review_materials" in required_tools or needs_material_workflow(goal, required_tools):
+        from app.llm.prompts.materials import MATERIALS_GUIDANCE
+
+        lines.append(MATERIALS_GUIDANCE)
+        if count := requested_slide_count(goal):
+            lines.append(f"Exact PPT total: {count} slides including the cover. Pass expected_slide_count={count} to create_presentation and review_materials.")
     if wants_document_photo(goal):
         lines += [
             "The webpage MUST actually contain the person's photo as an <img> "
@@ -451,6 +508,8 @@ def evaluate_turn(
         response=response or "",
         inspects=inspects,
     )
+    gaps.extend(material_delivery_gaps(goal_text, response or "", trace, exports_dir,
+                                      require_review="review_materials" in required_tools))
     if must_embed_image and not any("image_count=0" in g for g in gaps):
         from app.agent.artifacts import latest_inspect
 
@@ -490,3 +549,67 @@ def evaluate_turn(
         open_todos=open_todos,
         unverifiable_todos=unverifiable,
     )
+
+
+def material_delivery_gaps(goal: str, response: str, trace: list[dict[str, Any]] | None,
+                           exports_dir, *, require_review: bool = False) -> list[str]:
+    """Tie precise page counts and review evidence to the latest delivered bytes."""
+    steps = trace or []
+    latest: dict[str, dict[str, Any]] = {}
+    for step in steps:
+        if step.get("status") == "error":
+            continue
+        item = step.get("inspect") or {}
+        if item.get("kind") in {"pptx", "pdf"} and step.get("tool") in {"create_presentation", "create_pdf"}:
+            latest[item["kind"]] = item
+    gaps = []
+    expected = requested_slide_count(goal)
+    if expected and "pptx" in latest and latest["pptx"].get("slide_count") != expected:
+        gaps.append(f"The requested PPT has exactly {expected} total slides, but the latest file has {latest['pptx'].get('slide_count')}. Rebuild with expected_slide_count={expected}; covers and closing count toward the total.")
+    if not require_review and not needs_material_workflow(goal):
+        return gaps
+    reviews = [step["material_review"] for step in steps if isinstance(step.get("material_review"), dict)]
+    # The required-tool check asks for the first review; this check handles
+    # stale, incomplete, or failed review results without trusting prose.
+    if not reviews:
+        return gaps
+    reviewed = {item.get("file"): (review, item) for review in reviews for item in review.get("files") or []}
+    partial = False
+    checked_reviews: set[int] = set()
+    for kind, artifact in latest.items():
+        name = artifact.get("file") or ""
+        entry = reviewed.get(name)
+        if not entry:
+            gaps.append(f"The newest {kind} file {name} was not reviewed. Call review_materials on the latest files after all repairs.")
+            continue
+        review, item = entry
+        if id(review) not in checked_reviews:
+            checked_reviews.add(id(review))
+            global_errors = [issue for issue in review.get("issues") or [] if issue.get("severity") == "error"]
+            if global_errors:
+                gaps.append("Repair the findings for the delivered material files: " + "; ".join(str(issue.get("message") or "") for issue in global_errors[:4]))
+        path = exports_dir / name
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        except OSError:
+            digest = None
+        if not digest or digest != item.get("sha256") or digest != item.get("current_sha256"):
+            gaps.append(f"Review evidence is stale for {name}. The file bytes changed; review the latest file again.")
+        errors = [issue for issue in item.get("issues") or [] if issue.get("severity") == "error"]
+        if errors:
+            gaps.append(f"{name} still has review errors: " + "; ".join(str(issue.get("message") or "") for issue in errors[:4]))
+        partial |= not review.get("visual_review_complete")
+    if partial and not re.search(r"(?:视觉|渲染).{0,18}(?:未|无法|不可用|不支持)|(?:未|无法|缺少|仅).{0,18}(?:视觉|渲染|结构)|visual.{0,30}(?:unavailable|incomplete|not)|(?:not|no).{0,20}visual", response, re.I | re.S):
+        gaps.append("Visual review is incomplete or unavailable. Disclose the exact missing rendering/vision check in the final answer; structural checks must not be presented as a visual pass.")
+    if re.search(r"(?:代码|示例).{0,12}(?:已编译|已运行|运行通过|验证通过)|(?:已|实际)(?:编译|运行).{0,10}(?:代码|示例)", response):
+        latest_sources = next(((step.get("code_verification") or {}).get("source_sha256") for step in reversed(steps)
+                               if step.get("tool") == "create_code_files" and step.get("status") != "error"), None)
+        proof = bool(latest_sources) and any(
+            step.get("tool") == "verify_code_examples"
+            and (step.get("code_verification") or {}).get("verification_status") == "passed"
+            and (step.get("code_verification") or {}).get("source_sha256") == latest_sources
+            for step in steps
+        )
+        if not proof:
+            gaps.append("No verify_code_examples evidence proves these source files ran. Run the code when enabled, or disclose it was not run instead of claiming verified code.")
+    return gaps

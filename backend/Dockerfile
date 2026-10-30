@@ -11,7 +11,7 @@ WORKDIR /app
 # Build tools are needed by some wheels (chromadb deps) and removed afterwards
 # to keep the runtime image small.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl \
+    && apt-get install -y --no-install-recommends build-essential curl libreoffice-impress fonts-wqy-zenhei fonts-dejavu-core default-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

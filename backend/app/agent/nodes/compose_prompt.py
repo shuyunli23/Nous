@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import json
 
 from app.agent.goal import format_success_criteria
 from app.agent.skill_gate import is_recall_query, is_retry_or_continue, is_social_turn
@@ -32,6 +33,19 @@ async def compose_prompt_node(state: AgentState) -> AgentState:
         )
         if criteria:
             system_prompt = f"{system_prompt}\n\n{criteria}"
+        if state.get("material_plan") and "review_materials" in (state.get("required_tools") or []):
+            previous = json.dumps({"latest_files": state.get("material_files") or {}, "drafts": state.get("material_drafts") or {}, "plan": state["material_plan"]}, ensure_ascii=False)
+            instruction = (
+                "本轮继续未完成的材料，复用plan_id，先用read_material_draft核对已保存内容，再接着追加和导出。无需重新调用plan_materials，也不要覆盖已有成果。"
+                if state.get("material_resume") else
+                "根据本轮修改要求更新计划并重新调用plan_materials。继承仍适用的受众、内容和约束，"
+                "不要从头猜测；总页数变化时以本轮要求为准。"
+            )
+            system_prompt += (
+                "\n\n## 本会话最近的材料计划与文件\n"
+                + instruction + "旧审查不能证明新版已通过。\n"
+                + previous[:14000]
+            )
         system_prompt = f"{system_prompt}\n\n{TODO_GUIDANCE}"
         standing = format_todos_for_prompt(list(state.get("todos") or []))
         if standing:

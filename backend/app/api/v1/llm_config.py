@@ -180,7 +180,7 @@ async def deactivate_provider() -> LLMConfigResponse:
 @router.put(
     "/routes",
     response_model=LLMConfigResponse,
-    summary="Assign saved providers to chat, skill, notes, memory, knowledge, image",
+    summary="Assign saved providers to chat, skill, notes, memory, knowledge, materials, image",
 )
 async def update_routes(payload: LLMRoutesUpdate) -> LLMConfigResponse:
     _require_enabled()

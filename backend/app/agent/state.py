@@ -18,6 +18,24 @@ TOOL_LOOP_GRACE = 2
 # counter and only the graph recursion ceiling stops the turn, as an opaque
 # GraphRecursionError instead of a normal verify.
 TODO_ONLY_LOOP_BUDGET = 3
+# Only consecutive checklist-only batches count. Actual work resets the streak.
+MATERIAL_TODO_ONLY_LOOP_BUDGET = 12
+
+
+def is_material_turn(state: dict[str, Any]) -> bool:
+    return bool({"plan_materials", "review_materials"}.intersection(state.get("required_tools") or []))
+
+
+def todo_only_loop_limit(state: dict[str, Any]) -> int:
+    return MATERIAL_TODO_ONLY_LOOP_BUDGET if is_material_turn(state) else TODO_ONLY_LOOP_BUDGET
+
+
+def tool_loop_limit(state: dict[str, Any]) -> int:
+    from app.core.config import settings
+
+    if is_material_turn(state):
+        return max(settings.agent_max_tool_loops, settings.materials_max_tool_loops)
+    return settings.agent_max_tool_loops
 
 
 class AgentState(TypedDict, total=False):
@@ -45,9 +63,15 @@ class AgentState(TypedDict, total=False):
     todo_loop_count: int          # rounds that only touched the checklist
     verify_attempts: int
     needs_retry: bool
+    verification_complete: bool
     required_tools: list[str]
     goal_text: str
     must_embed_image: bool
+    material_plan_id: str | None
+    material_plan: dict[str, Any] | None
+    material_files: dict[str, str]
+    material_drafts: dict[str, dict[str, Any]]
+    material_resume: bool
     todos: list[dict[str, str]]
     error: str | None
     mode_key: str

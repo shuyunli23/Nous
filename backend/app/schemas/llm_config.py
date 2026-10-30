@@ -164,10 +164,11 @@ class LLMRoutesUpdate(BaseModel):
     notes: str | None = None
     memory: str | None = None
     knowledge: str | None = None
+    materials: str | None = None
     image: str | None = None
 
     @field_validator(
-        "chat", "skill", "notes", "memory", "knowledge", "image", mode="before"
+        "chat", "skill", "notes", "memory", "knowledge", "materials", "image", mode="before"
     )
     @classmethod
     def _blank_to_none(cls, value: object) -> object:

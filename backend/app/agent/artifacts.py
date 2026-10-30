@@ -6,6 +6,7 @@ unless this inspector saw it in the bytes on disk.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Any
@@ -40,9 +41,9 @@ def inspect_path(path: Path | str | None) -> dict[str, Any] | None:
     if suffix in {".html", ".htm"}:
         return _inspect_html(file)
     if suffix == ".pptx":
-        return _inspect_pptx(file)
+        return {**_inspect_pptx(file), "sha256": hashlib.sha256(file.read_bytes()).hexdigest()}
     if suffix == ".pdf":
-        return _inspect_pdf(file)
+        return {**_inspect_pdf(file), "sha256": hashlib.sha256(file.read_bytes()).hexdigest()}
     if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
         return _inspect_image(file)
     return {

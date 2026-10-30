@@ -28,8 +28,8 @@ def test_extract_goal_strips_attachment_dump() -> None:
 def test_infer_required_tools_routes_artifacts() -> None:
     assert infer_required_tools("把这篇论文做成 demo 网页") == ["create_webpage"]
     assert infer_required_tools("做一份 PPT") == ["create_presentation"]
-    assert infer_required_tools("demo 也顺便给个 ppt") == ["create_webpage"]
-    assert infer_required_tools("生成一份讲义 PDF") == ["create_pdf"]
+    assert infer_required_tools("demo 也顺便给个 ppt") == ["create_webpage", "create_presentation"]
+    assert infer_required_tools("生成一份讲义 PDF") == ["plan_materials", "create_pdf", "review_materials"]
     assert infer_required_tools("这篇 PDF 讲了什么") == []
     assert infer_required_tools("今天天气怎么样") == []
     assert infer_required_tools("加一个求职者图像") == ["create_webpage"]

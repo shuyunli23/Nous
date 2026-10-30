@@ -38,7 +38,7 @@ STORE_VERSION = 1
 
 # Background jobs and chat can each point at a saved provider. Unmapped
 # purposes still follow ``active_id`` (or ``.env``).
-CHAT_PURPOSES = ("chat", "skill", "notes", "memory", "knowledge")
+CHAT_PURPOSES = ("chat", "skill", "notes", "memory", "knowledge", "materials")
 ROUTE_PURPOSES = (*CHAT_PURPOSES, "image")
 
 

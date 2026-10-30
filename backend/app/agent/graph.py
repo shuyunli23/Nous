@@ -41,7 +41,7 @@ from app.agent.nodes.tool_executor import tool_executor_node
 from app.agent.nodes.verify import should_continue_after_verify, verify_node
 from app.agent.progress import emit_node_end, emit_node_start, stamp_node_trace
 from app.agent.state import (
-    TODO_ONLY_LOOP_BUDGET,
+    MATERIAL_TODO_ONLY_LOOP_BUDGET,
     TOOL_LOOP_GRACE,
     AgentState,
 )
@@ -73,13 +73,16 @@ def graph_recursion_limit() -> int:
     edge will happily spend -- so a 12-loop brief cannot die as an opaque
     ``GraphRecursionError``.
     """
-    loops = (
-        max(1, settings.agent_max_tool_loops)
+    work_batches = (
+        max(1, settings.agent_max_tool_loops, settings.materials_max_tool_loops)
         + TOOL_LOOP_GRACE
-        + TODO_ONLY_LOOP_BUDGET
     )
+    # Real work resets the consecutive checklist streak. Allow a full streak
+    # before every work batch and once after the last one, rather than counting
+    # the checklist budget just once for the entire turn.
+    batches = work_batches + (work_batches + 1) * MATERIAL_TODO_ONLY_LOOP_BUDGET
     retries = max(0, settings.agent_max_verify_retries)
-    return max(60, 8 + 3 * (loops + retries + 2))
+    return max(60, 8 + 2 * (batches + retries + 2))
 
 
 def _track(name: str, fn: NodeFn) -> NodeFn:

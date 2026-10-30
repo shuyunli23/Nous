@@ -26,6 +26,12 @@ _KEEP_KEYS = (
     "title",
     "inspect",
     "message",
+    "plan_id",
+    "draft_id",
+    "item_count",
+    "workspace",
+    "execution_enabled",
+    "verification_status",
 )
 
 _SAFE = re.compile(r"[^a-zA-Z0-9._-]+")
@@ -57,6 +63,10 @@ def maybe_spill(
 ) -> dict[str, Any]:
     """Replace an oversized result with a preview + locator. Never raises."""
     cap = int(settings.spill_max_inline_bytes or 0)
+    if tool == "read_material_draft":
+        # This tool already bounds its explicit range to 128000 bytes. Pruning
+        # the middle would defeat recovery of the authored source/chapter.
+        return result
     if cap <= 0:
         return result
     try:
@@ -96,6 +106,19 @@ def maybe_spill(
         if key in result:
             slim[key] = result[key]
     slim.setdefault("ok", result.get("ok", True))
+    if tool == "review_materials":
+        for key in ("status", "review_complete", "review_scope", "visual_review_complete"):
+            slim[key] = result.get(key)
+        slim["issues"] = (result.get("issues") or [])[:20]
+        slim["files"] = [
+            {
+                "file": item.get("file"), "sha256": item.get("sha256"),
+                "render": item.get("render"),
+                "visual": {key: (item.get("visual") or {}).get(key) for key in ("status", "reason", "unreviewed_pages")},
+                "preview_urls": [page.get("preview_url") for page in (item.get("pages") or [])[:4]],
+            }
+            for item in result.get("files") or []
+        ]
     logger.info(
         "tool_result_spilled",
         tool=tool,

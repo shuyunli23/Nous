@@ -27,12 +27,27 @@ async def tool_executor_node(state: AgentState, *, session: AsyncSession) -> Age
     trace = list(state.get("execution_trace") or [])
     chain = dict(state.get("repeat_chain") or {})
     conversation_id = state.get("conversation_id")
+    material_plan_id = state.get("material_plan_id")
 
     for tc in tool_calls:
         fn = tc.get("function", {}) or {}
         name = fn.get("name", "unknown")
         call_id = tc.get("id", "")
         raw_args = fn.get("arguments", "{}")
+        if name in {"create_presentation", "create_pdf", "review_materials", "write_material_draft", "create_code_files"}:
+            try:
+                args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
+                if material_plan_id:
+                    args.setdefault("plan_id", material_plan_id)
+                if name in {"create_presentation", "review_materials"}:
+                    from app.agent.goal import requested_slide_count
+
+                    expected = requested_slide_count(state.get("goal_text") or "")
+                    if expected:
+                        args["expected_slide_count"] = expected
+                raw_args = args
+            except (ValueError, TypeError):
+                pass  # The tool dispatcher reports malformed arguments.
 
         emit(
             {
@@ -54,18 +69,21 @@ async def tool_executor_node(state: AgentState, *, session: AsyncSession) -> Age
         from app.agent.artifacts import attach_inspect
 
         result = attach_inspect(result)
+        evidence = result
         result = maybe_spill(
             result, tool=name, conversation_id=conversation_id
         )
         if name == "todo_write" and result.get("ok") and isinstance(result.get("todos"), list):
             todos = list(result["todos"])
+        if name == "plan_materials" and result.get("ok"):
+            material_plan_id = result.get("plan_id")
         chain, reminder = note_call(chain, name=name, raw_args=raw_args)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         step = tool_step(
             name=name,
             call_id=call_id,
             raw_args=raw_args,
-            result=result,
+            result=evidence,
         )
         step["elapsed_ms"] = elapsed_ms
         if isinstance(result.get("inspect"), dict):
@@ -105,6 +123,7 @@ async def tool_executor_node(state: AgentState, *, session: AsyncSession) -> Age
     todo_loop_count = state.get("todo_loop_count") or 0
     if work_calls:
         loop_count += 1
+        todo_loop_count = 0
     elif names:
         todo_loop_count += 1
 
@@ -117,4 +136,5 @@ async def tool_executor_node(state: AgentState, *, session: AsyncSession) -> Age
         "tool_loop_count": loop_count,
         "todo_loop_count": todo_loop_count,
         "execution_trace": trace,
+        "material_plan_id": material_plan_id,
     }

@@ -15,6 +15,7 @@ router = APIRouter(prefix="/files", tags=["files"])
 _SAFE_NAME = re.compile(r"^[\w\u4e00-\u9fff.\-]+$")
 
 _MEDIA_BY_SUFFIX = {
+    ".zip": "application/zip",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".ppt": "application/vnd.ms-powerpoint",
     ".pdf": "application/pdf",
